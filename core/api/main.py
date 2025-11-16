@@ -1,0 +1,79 @@
+"""
+Main FastAPI Application
+Главный сервер Lead Generation System
+"""
+
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
+import logging
+
+from core.api.config import settings
+from core.api.routes import health, niches, campaigns, leads
+
+# Настройка логирования
+logging.basicConfig(
+    level=settings.log_level,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifecycle events"""
+    # Startup
+    logger.info("🚀 Lead Generation System запускается...")
+    logger.info(f"📊 Supabase URL: {settings.supabase_url}")
+    logger.info(f"🤖 Debug режим: {settings.debug}")
+    
+    yield
+    
+    # Shutdown
+    logger.info("👋 Lead Generation System останавливается...")
+
+
+# Создаем FastAPI приложение
+app = FastAPI(
+    title="Lead Generation System",
+    description="Модульная система автоматизации лид-генерации",
+    version="0.1.0",
+    lifespan=lifespan
+)
+
+# CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # В продакшене указать конкретные домены
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Подключаем роуты
+app.include_router(health.router, prefix="/api", tags=["Health"])
+app.include_router(niches.router, prefix="/api/niches", tags=["Niches"])
+app.include_router(campaigns.router, prefix="/api/campaigns", tags=["Campaigns"])
+app.include_router(leads.router, prefix="/api/leads", tags=["Leads"])
+
+
+@app.get("/")
+async def root():
+    """Корневой эндпоинт"""
+    return {
+        "message": "Lead Generation System API",
+        "version": "0.1.0",
+        "docs": "/docs",
+        "status": "running"
+    }
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "core.api.main:app",
+        host=settings.api_host,
+        port=settings.api_port,
+        reload=settings.debug
+    )
+
