@@ -1,0 +1,119 @@
+version: '3.8'
+
+services:
+  # FastAPI Application
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: leadgen-api
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DEBUG=false
+    env_file:
+      - .env
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+    restart: unless-stopped
+    depends_on:
+      - redis
+    networks:
+      - leadgen-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Redis - Task Queue
+  redis:
+    image: redis:7-alpine
+    container_name: leadgen-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - leadgen-network
+
+  # n8n - Workflow Automation
+  n8n:
+    image: n8nio/n8n
+    container_name: leadgen-n8n
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_USER:-admin}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD:-admin123}
+      - N8N_HOST=0.0.0.0
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - NODE_ENV=production
+      - WEBHOOK_URL=${WEBHOOK_URL:-http://localhost:5678/}
+    volumes:
+      - n8n_data:/home/node/.n8n
+    restart: unless-stopped
+    depends_on:
+      - redis
+    networks:
+      - leadgen-network
+
+  # Metabase - Analytics Dashboard
+  metabase:
+    image: metabase/metabase:latest
+    container_name: leadgen-metabase
+    ports:
+      - "3000:3000"
+    environment:
+      - MB_DB_TYPE=postgres
+      - MB_DB_DBNAME=${METABASE_DB_NAME:-metabase}
+      - MB_DB_PORT=${METABASE_DB_PORT:-5432}
+      - MB_DB_USER=${METABASE_DB_USER:-metabase}
+      - MB_DB_PASS=${METABASE_DB_PASS:-metabase}
+      - MB_DB_HOST=${METABASE_DB_HOST:-postgres}
+    volumes:
+      - metabase_data:/metabase-data
+    restart: unless-stopped
+    networks:
+      - leadgen-network
+
+  # Nginx - Reverse Proxy (опционально)
+  nginx:
+    image: nginx:alpine
+    container_name: leadgen-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    restart: unless-stopped
+    depends_on:
+      - api
+    networks:
+      - leadgen-network
+
+volumes:
+  redis_data:
+    driver: local
+  n8n_data:
+    driver: local
+  metabase_data:
+    driver: local
+
+networks:
+  leadgen-network:
+    name: leadgen-network
+    driver: bridge
+

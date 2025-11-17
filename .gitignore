@@ -72,3 +72,7 @@ tmp/
 # Redis dump
 dump.rdb
 
+# Deployment
+deploy/
+*.tar.gz
+

@@ -1,0 +1,161 @@
+name: 🚀 Auto Deploy to VPS
+
+on:
+  # Автоматический деплой каждые 4 часа
+  schedule:
+    - cron: '0 */4 * * *'  # Каждые 4 часа
+  # Также деплой при push в main
+  push:
+    branches:
+      - main
+  # Ручной запуск
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+
+env:
+  VPS_HOST: ${{ secrets.VPS_HOST }}
+  VPS_USER: ${{ secrets.VPS_USER }}
+  VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+  VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH || '/opt/lead-generation-system' }}
+
+jobs:
+  deploy:
+    name: Deploy to VPS
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 🏷️ Create version tag
+        id: version
+        run: |
+          VERSION=$(date +"%Y%m%d-%H%M%S")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          git tag -a "v$VERSION" -m "Auto-deploy: $VERSION"
+          git push origin "v$VERSION" || true
+
+      - name: 📦 Create deployment package
+        run: |
+          mkdir -p deploy
+          tar -czf deploy/leadgen-${{ env.VERSION }}.tar.gz \
+            --exclude='.git' \
+            --exclude='venv' \
+            --exclude='__pycache__' \
+            --exclude='*.pyc' \
+            --exclude='.env' \
+            --exclude='*.log' \
+            --exclude='.pytest_cache' \
+            --exclude='.scrapy' \
+            --exclude='playwright/.auth' \
+            .
+
+      - name: 🔐 Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
+
+      - name: 📤 Upload to VPS
+        run: |
+          scp -o StrictHostKeyChecking=no \
+              deploy/leadgen-${{ env.VERSION }}.tar.gz \
+              ${{ env.VPS_USER }}@${{ env.VPS_HOST }}:/tmp/
+
+      - name: 🚀 Deploy on VPS
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ env.VPS_USER }}@${{ env.VPS_HOST }} << 'ENDSSH'
+            set -e
+            
+            DEPLOY_PATH="${{ env.VPS_DEPLOY_PATH }}"
+            VERSION="${{ env.VERSION }}"
+            BACKUP_PATH="/opt/backups/leadgen"
+            
+            echo "📦 Распаковка новой версии..."
+            mkdir -p "$DEPLOY_PATH"
+            cd "$DEPLOY_PATH"
+            
+            # Создание резервной копии текущей версии
+            if [ -d "$DEPLOY_PATH" ] && [ "$(ls -A $DEPLOY_PATH)" ]; then
+              echo "💾 Создание резервной копии..."
+              mkdir -p "$BACKUP_PATH"
+              tar -czf "$BACKUP_PATH/backup-$(date +%Y%m%d-%H%M%S).tar.gz" \
+                --exclude='venv' \
+                --exclude='__pycache__' \
+                -C "$DEPLOY_PATH" .
+              
+              # Удаление старых бэкапов (оставляем последние 10)
+              ls -t "$BACKUP_PATH"/*.tar.gz | tail -n +11 | xargs rm -f || true
+            fi
+            
+            # Распаковка новой версии
+            tar -xzf /tmp/leadgen-$VERSION.tar.gz -C "$DEPLOY_PATH"
+            rm /tmp/leadgen-$VERSION.tar.gz
+            
+            # Копирование .env если существует
+            if [ -f "$DEPLOY_PATH/.env.backup" ]; then
+              cp "$DEPLOY_PATH/.env.backup" "$DEPLOY_PATH/.env"
+            fi
+            
+            echo "✅ Версия $VERSION развернута"
+          ENDSSH
+
+      - name: 🔄 Restart services on VPS
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ env.VPS_USER }}@${{ env.VPS_HOST }} << 'ENDSSH'
+            set -e
+            
+            DEPLOY_PATH="${{ env.VPS_DEPLOY_PATH }}"
+            
+            echo "🔄 Перезапуск сервисов..."
+            cd "$DEPLOY_PATH"
+            
+            # Перезапуск Docker контейнеров
+            if [ -f docker-compose.yml ]; then
+              docker-compose down
+              docker-compose up -d --build
+            fi
+            
+            # Перезапуск systemd сервиса (если настроен)
+            if systemctl is-active --quiet leadgen-api; then
+              systemctl restart leadgen-api
+            fi
+            
+            echo "✅ Сервисы перезапущены"
+          ENDSSH
+
+      - name: ✅ Health check
+        run: |
+          sleep 10
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            http://${{ env.VPS_HOST }}/api/health || echo "000")
+          
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "✅ Health check passed"
+          else
+            echo "⚠️ Health check failed (HTTP $HTTP_CODE)"
+            exit 1
+          fi
+
+      - name: 📢 Notify deployment
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+          VERSION="${{ env.VERSION }}"
+          
+          if [ "$STATUS" = "success" ]; then
+            echo "✅ Деплой версии $VERSION успешен"
+          else
+            echo "❌ Деплой версии $VERSION провален"
+          fi
+
