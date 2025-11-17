@@ -31,10 +31,12 @@ class Settings(BaseSettings):
     # Telegram
     telegram_bot_token: Optional[str] = None
     telegram_notification_chat_id: Optional[str] = None
+    telegram_sales_chat_id: Optional[str] = None
     
     # WhatsApp (WAHA)
     whatsapp_api_url: str = "http://localhost:3001"
     whatsapp_api_key: Optional[str] = None
+    whatsapp_session_name: str = "leadgen"
     
     # Proxy
     use_proxy: bool = False
@@ -44,6 +46,9 @@ class Settings(BaseSettings):
     proxy_username: Optional[str] = None
     proxy_password: Optional[str] = None
     proxy_list: Optional[str] = None
+    proxy_enabled: bool = False
+    proxy_url: Optional[str] = None
+    proxy_rotation_interval: int = 300
     
     # Captcha
     captcha_api_key: Optional[str] = None
@@ -52,6 +57,9 @@ class Settings(BaseSettings):
     # AI/LLM
     openai_api_key: Optional[str] = None
     openai_model: str = "gpt-4"
+    openai_max_tokens: int = 500
+    anthropic_api_key: Optional[str] = None
+    anthropic_model: str = "claude-3-5-sonnet-20241022"
     use_local_llm: bool = False
     ollama_base_url: str = "http://localhost:11434"
     
@@ -69,6 +77,28 @@ class Settings(BaseSettings):
     max_concurrent_parsers: int = 3
     lead_qualification_timeout: int = 300
     
+    # Module 1: Market Research
+    max_scraping_workers: int = 3
+    scraping_rate_limit: int = 1
+    scraping_timeout: int = 30
+    
+    # Module 2: Traffic Generation
+    max_ads_per_campaign: int = 10
+    ad_posting_delay_min: int = 2
+    ad_posting_delay_max: int = 5
+    
+    # Module 3: Lead Qualification
+    min_qualification_score: int = 60
+    
+    # Module 4: Sales Handoff
+    auto_handoff_threshold: int = 80
+    handoff_notification_channels: str = "telegram"
+    
+    # Module 5: Analytics
+    metrics_cache_ttl: int = 3600
+    daily_report_time: str = "09:00"
+    enable_daily_reports: bool = True
+    
     # Notifications
     enable_notifications: bool = True
     notification_channels: str = "telegram,email"
@@ -76,6 +106,22 @@ class Settings(BaseSettings):
     # Logging
     log_level: str = "INFO"
     log_file: str = "logs/app.log"
+    
+    # Email
+    email_smtp_host: str = "smtp.gmail.com"
+    email_smtp_port: int = 587
+    email_from: Optional[str] = None
+    email_password: Optional[str] = None
+    
+    # SMS
+    sms_provider: Optional[str] = None
+    twilio_account_sid: Optional[str] = None
+    twilio_auth_token: Optional[str] = None
+    twilio_phone_number: Optional[str] = None
+    
+    # Analytics
+    ga_tracking_id: Optional[str] = None
+    sentry_dsn: Optional[str] = None
     
     class Config:
         env_file = ".env"
