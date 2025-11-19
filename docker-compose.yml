@@ -50,19 +50,6 @@ services:
       - metabase_data:/metabase-data
     restart: unless-stopped
 
-  # WAHA - WhatsApp HTTP API (для будущего использования)
-  # Раскомментируйте когда будете готовы к WhatsApp интеграции
-  # waha:
-  #   image: devlikeapro/waha
-  #   container_name: leadgen-waha
-  #   ports:
-  #     - "3001:3000"
-  #   environment:
-  #     - WHATSAPP_HOOK_URL=http://host.docker.internal:8000/webhooks/whatsapp
-  #   volumes:
-  #     - waha_data:/app/.sessions
-  #   restart: unless-stopped
-
 volumes:
   redis_data:
     driver: local
@@ -70,8 +57,6 @@ volumes:
     driver: local
   metabase_data:
     driver: local
-  # waha_data:
-  #   driver: local
 
 networks:
   default:

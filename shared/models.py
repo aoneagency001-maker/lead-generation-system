@@ -45,9 +45,27 @@ class LeadStatus(str, Enum):
 class Platform(str, Enum):
     """Платформы"""
     OLX = "olx"
+    SATU = "satu"
     KASPI = "kaspi"
     TELEGRAM = "telegram"
     WHATSAPP = "whatsapp"
+
+
+class ModuleStatus(str, Enum):
+    """Статусы модулей"""
+    ACTIVE = "active"
+    TESTING = "testing"
+    INACTIVE = "inactive"
+    ARCHIVED = "archived"
+
+
+class PipelineStage(str, Enum):
+    """Стратегические этапы модулей (воронка)"""
+    RESEARCH = "research"  # Анализ/Исследование
+    ACQUISITION = "acquisition"  # Привлечение трафика
+    PROCESSING = "processing"  # Обработка лидов
+    CONVERSION = "conversion"  # Конверсия/Продажи
+    ANALYTICS = "analytics"  # Аналитика
 
 
 # ===================================
@@ -206,15 +224,42 @@ class NicheMetrics(BaseModel):
     """Метрики ниши"""
     niche_id: str
     name: str
-    
+
     total_campaigns: int
     total_leads: int
     total_spent: float
-    
+
     avg_cpl: float
     avg_roi: Optional[float] = None
-    
+
     best_platform: Optional[str] = None
+
+
+# ===================================
+# Module Models
+# ===================================
+
+class PlatformModule(BaseDBModel):
+    """Модель модуля платформы"""
+    name: str
+    platform: Platform
+    status: ModuleStatus = ModuleStatus.INACTIVE
+    pipeline_stage: PipelineStage = PipelineStage.RESEARCH  # Стратегический этап
+
+    description: Optional[str] = None
+    version: str = "1.0.0"
+
+    api_url: str  # URL модуля (напр. http://localhost:8001)
+    health_endpoint: str = "/health"
+
+    features: List[str] = Field(default_factory=list, description="Доступные функции модуля")
+    config: Optional[Dict] = Field(default_factory=dict, description="Конфигурация модуля")
+
+    last_health_check: Optional[datetime] = None
+    is_healthy: bool = False
+
+    order: int = 0  # Порядок отображения
+    pipeline_order: int = 0  # Порядок в пайплайне
 
 
 # ===================================
@@ -226,12 +271,15 @@ __all__ = [
     "CampaignStatus",
     "LeadStatus",
     "Platform",
+    "ModuleStatus",
+    "PipelineStage",
     "Niche",
     "Campaign",
     "Ad",
     "Lead",
     "ConversationMessage",
     "CampaignMetrics",
-    "NicheMetrics"
+    "NicheMetrics",
+    "PlatformModule"
 ]
 

@@ -8,8 +8,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
 
-from core.api.config import settings
-from core.api.routes import health, niches, campaigns, leads
+from core.api.config import settings, get_cors_origins
+from core.api.routes import health, niches, campaigns, leads, modules
+
+# Competitor Parser Module
+try:
+    from modules.competitor_parser.api import router as parser_router
+    PARSER_MODULE_AVAILABLE = True
+except ImportError as e:
+    PARSER_MODULE_AVAILABLE = False
+    print(f"⚠️  Competitor Parser module not available: {e}")
 
 # Настройка логирования
 logging.basicConfig(
@@ -44,8 +52,8 @@ app = FastAPI(
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # В продакшене указать конкретные домены
-    allow_credentials=True,
+    allow_origins=get_cors_origins(),
+    allow_credentials=settings.cors_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -55,6 +63,12 @@ app.include_router(health.router, prefix="/api", tags=["Health"])
 app.include_router(niches.router, prefix="/api/niches", tags=["Niches"])
 app.include_router(campaigns.router, prefix="/api/campaigns", tags=["Campaigns"])
 app.include_router(leads.router, prefix="/api/leads", tags=["Leads"])
+app.include_router(modules.router, prefix="/api", tags=["Modules"])
+
+# Competitor Parser Module
+if PARSER_MODULE_AVAILABLE:
+    app.include_router(parser_router, prefix="/api", tags=["Competitor Parser"])
+    logger.info("✅ Competitor Parser module loaded")
 
 
 @app.get("/")

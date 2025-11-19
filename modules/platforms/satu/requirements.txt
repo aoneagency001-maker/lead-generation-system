@@ -1,0 +1,56 @@
+# =========================================
+# Satu Module Dependencies
+# =========================================
+
+# FastAPI и сервер
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+pydantic-settings==2.1.0
+
+# Database
+supabase==2.3.0
+postgrest-py==0.13.1
+
+# Redis
+redis==5.0.1
+hiredis==2.2.3
+
+# Playwright для браузерной автоматизации
+playwright==1.40.0
+
+# HTTP клиенты
+httpx==0.25.2
+requests==2.31.0
+aiohttp==3.9.1
+
+# HTML парсинг
+beautifulsoup4==4.12.2
+lxml==4.9.3
+
+# Утилиты
+python-dotenv==1.0.0
+python-multipart==0.0.6
+
+# Логирование
+loguru==0.7.2
+
+# Crypto для token security
+cryptography==41.0.7
+
+# JSON
+orjson==3.9.10
+
+# Rate limiting
+ratelimit==2.2.1
+
+# User-Agent rotation
+fake-useragent==1.4.0
+
+# Testing
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+httpx-auth==0.22.0
+
+

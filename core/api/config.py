@@ -13,8 +13,12 @@ class Settings(BaseSettings):
     # API Settings
     api_host: str = "0.0.0.0"
     api_port: int = 8000
-    debug: bool = True
+    debug: bool = False
     api_secret_key: str = "change-me-in-production"
+
+    # CORS Settings
+    cors_origins: str = "http://localhost:3000,http://localhost:3001"
+    cors_allow_credentials: bool = True
     
     # Supabase
     supabase_url: str
@@ -184,11 +188,17 @@ def is_ai_configured() -> bool:
     return bool(settings.openai_api_key or settings.use_local_llm)
 
 
+def get_cors_origins() -> list:
+    """Получить список разрешенных CORS origins"""
+    return [origin.strip() for origin in settings.cors_origins.split(",")]
+
+
 # Экспорт
 __all__ = [
     "settings",
     "get_proxy_config",
     "get_notification_channels",
+    "get_cors_origins",
     "is_telegram_configured",
     "is_whatsapp_configured",
     "is_ai_configured"
