@@ -39,6 +39,9 @@ env/
 *.swo
 *~
 
+# Cursor AI Rules (Confidential - DO NOT COMMIT)
+.cursorrules
+
 # OS
 .DS_Store
 Thumbs.db
@@ -89,3 +92,8 @@ frontend/.turbo/
 
 # Build artifacts
 project_structure.txt
+
+# Internal Library (NOT for deployment)
+library/
+# Library содержит внутренние готовые решения для разработки
+# НЕ должна попадать в production

@@ -1,0 +1,82 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Documentation (не нужна в production)
+MD/
+docs/
+*.md
+!README.md
+
+# Library - НЕ ДЕПЛОИТСЯ В PRODUCTION
+library/
+
+# Tests
+tests/
+test_*.py
+*_test.py
+pytest_cache/
+.pytest_cache/
+
+# Coverage
+.coverage
+htmlcov/
+.tox/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+
+# Scripts (для локальной разработки)
+scripts/
+
+# Node.js (если есть frontend в том же контейнере)
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Временные файлы
+tmp/
+temp/
+*.tmp
+
+# Backup файлы
+*.bak
+*.backup
+backup/
+
