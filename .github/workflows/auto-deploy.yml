@@ -300,17 +300,27 @@ jobs:
             
             # Перезапуск Docker контейнеров
             if [ -f docker-compose.yml ]; then
+              # Проверяем, какая команда доступна (docker compose или docker-compose)
+              if docker compose version >/dev/null 2>&1; then
+                DOCKER_COMPOSE_CMD="docker compose"
+              elif docker-compose --version >/dev/null 2>&1; then
+                DOCKER_COMPOSE_CMD="docker-compose"
+              else
+                echo "⚠️ docker compose не найден, пропускаем перезапуск контейнеров"
+                exit 0
+              fi
+              
               # Проверяем, нужен ли sudo для docker
               if docker ps >/dev/null 2>&1; then
                 echo "🛑 Остановка существующих контейнеров..."
-                docker-compose down --remove-orphans || true
+                $DOCKER_COMPOSE_CMD down --remove-orphans || true
                 echo "🚀 Запуск новых контейнеров..."
-                docker-compose up -d --build --remove-orphans || true
+                $DOCKER_COMPOSE_CMD up -d --build --remove-orphans || true
               elif sudo docker ps >/dev/null 2>&1; then
                 echo "🛑 Остановка существующих контейнеров..."
-                sudo docker-compose down --remove-orphans || true
+                sudo $DOCKER_COMPOSE_CMD down --remove-orphans || true
                 echo "🚀 Запуск новых контейнеров..."
-                sudo docker-compose up -d --build --remove-orphans || true
+                sudo $DOCKER_COMPOSE_CMD up -d --build --remove-orphans || true
               else
                 echo "⚠️ Docker не доступен, пропускаем перезапуск контейнеров"
               fi
