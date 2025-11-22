@@ -257,19 +257,19 @@ class DataIntakePipeline:
             "date1": date_from.isoformat(),
             "date2": date_to.isoformat(),
             "metrics": "ym:s:visits,ym:s:pageviews,ym:s:bounceRate",
+            # Максимум 10 dimensions (лимит API Яндекс.Метрики)
             "dimensions": ",".join([
-                "ym:s:date",
-                "ym:s:startURL",
-                "ym:s:referer",
-                "ym:s:UTMSource",
-                "ym:s:UTMMedium",
-                "ym:s:UTMCampaign",
-                "ym:s:isNewUser",
-                "ym:s:deviceCategory",
-                "ym:s:browser",
-                "ym:s:operatingSystem",
-                "ym:s:regionCountry",
-                "ym:s:regionCity",
+                "ym:s:date",           # 1. Дата
+                "ym:s:startURL",       # 2. URL страницы
+                "ym:s:referer",        # 3. Реферер
+                "ym:s:UTMSource",      # 4. UTM Source
+                "ym:s:UTMMedium",      # 5. UTM Medium
+                "ym:s:UTMCampaign",    # 6. UTM Campaign
+                "ym:s:isNewUser",      # 7. Новый пользователь
+                "ym:s:deviceCategory", # 8. Тип устройства
+                "ym:s:regionCountry",  # 9. Страна
+                "ym:s:regionCity",     # 10. Город
+                # Убраны: browser, operatingSystem (превышали лимит)
             ]),
             "limit": "10000",
             "accuracy": "full",
@@ -543,14 +543,23 @@ class DataIntakePipeline:
         if isinstance(value, datetime):
             return value
         
+        if isinstance(value, date) and not isinstance(value, datetime):
+            return datetime.combine(value, datetime.min.time())
+        
         if isinstance(value, str):
             try:
-                # Try ISO format
+                # Try ISO format with time (2025-11-22T10:30:00 or 2025-11-22 10:30:00)
                 if 'T' in value or ' ' in value:
-                    return datetime.fromisoformat(value.replace('Z', '+00:00'))
-                # Try date only
-                return datetime.combine(datetime.fromisoformat(value).date(), datetime.min.time())
-            except Exception:
+                    # Remove timezone if present and handle
+                    value_clean = value.replace('Z', '+00:00')
+                    return datetime.fromisoformat(value_clean)
+                
+                # Try date only (2025-11-22) - use date.fromisoformat
+                from datetime import date as date_type
+                parsed_date = date_type.fromisoformat(value)
+                return datetime.combine(parsed_date, datetime.min.time())
+            except (ValueError, AttributeError) as e:
+                logger.warning(f"Failed to parse datetime '{value}': {e}")
                 pass
         
         return datetime.utcnow()
