@@ -177,16 +177,16 @@ export default function LLMPipelinePage() {
         const result = await res.json()
         console.log('📊 Pipeline result:', result)
         
-        // Check if no data or needs normalization
+        // Check if no data, needs normalization, or partial completion
         if (result.status === "no_data" || result.status === "needs_normalization") {
           setPipelineProgress(null)
-          
+
           toast({
             title: result.status === "needs_normalization" ? "Требуется нормализация" : "Нет данных",
             description: result.message || "Не найдено данных для обработки",
             variant: result.status === "needs_normalization" ? "default" : "destructive",
           })
-          
+
           if (result.suggestion) {
             setTimeout(() => {
               toast({
@@ -195,10 +195,26 @@ export default function LLMPipelinePage() {
               })
             }, 2000)
           }
-          
+
           return
         }
-        
+
+        // Handle partial completion (data already normalized)
+        if (result.status === "partial") {
+          await fetchData()
+          setPipelineProgress({ stage: "Частичное завершение", progress: 100, message: "Данные уже обработаны" })
+
+          toast({
+            title: "Pipeline частично завершен",
+            description: "Данные уже нормализованы. Используйте 'Генерировать Insights' для создания аналитики.",
+          })
+
+          setTimeout(() => {
+            setPipelineProgress(null)
+          }, 3000)
+          return
+        }
+
         setPipelineProgress({ stage: "Обработка", progress: 50, message: "Запуск LLM обработки..." })
         setPipelineProgress({ stage: "Завершение", progress: 80, message: "Сохранение результатов..." })
         
