@@ -135,6 +135,7 @@ class Settings(BaseSettings):
     
     # Yandex Metrika
     yandex_metrika_token: Optional[str] = None
+    yandex_metrika_counter_id: Optional[str] = None
     
     # Google Analytics 4
     google_analytics_credentials_path: Optional[str] = None
@@ -143,6 +144,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = False
+        extra = "ignore"  # Игнорировать дополнительные поля из .env
 
 
 # Создаем глобальный экземпляр настроек

@@ -497,41 +497,96 @@ async def run_full_pipeline(
 
         supabase = get_supabase_client()
 
-        # Fetch raw events
-        query = supabase.table("raw_events")\
+        # Fetch normalized events (they have occurred_at and all needed fields)
+        # Note: raw_events doesn't have occurred_at, url, utm_source - these are in normalized_events
+        query = supabase.table("normalized_events")\
             .select("*")\
             .gte("occurred_at", request.date_from.isoformat())\
-            .lte("occurred_at", request.date_to.isoformat())\
-            .eq("is_normalized", False)
+            .lte("occurred_at", request.date_to.isoformat())
 
         if request.source:
             query = query.eq("source", request.source)
 
-        query = query.limit(500)
+        query = query.limit(500).order("occurred_at", desc=False)
         result = query.execute()
 
         if not result.data:
+            # Check if there are any raw_events that could be normalized first
+            raw_check = supabase.table("raw_events")\
+                .select("id", count="exact")\
+                .gte("date_from", request.date_from.isoformat())\
+                .lte("date_to", request.date_to.isoformat())\
+                .limit(1)\
+                .execute()
+            
+            if raw_check.count and raw_check.count > 0:
+                return {
+                    "status": "needs_normalization",
+                    "task_id": task_id,
+                    "message": f"Found {raw_check.count} raw events but no normalized events. Please run data intake pipeline first to normalize raw events.",
+                    "raw_events_count": raw_check.count,
+                    "suggestion": "Run /api/data-intake/pipeline/run to normalize raw events first"
+                }
+            
             return {
                 "status": "no_data",
                 "task_id": task_id,
-                "message": "No raw events to process"
+                "message": f"No events found for period {request.date_from} to {request.date_to}. Please ensure data is imported first.",
+                "date_from": request.date_from.isoformat(),
+                "date_to": request.date_to.isoformat(),
+                "suggestion": "Import data from GA4 or Yandex Metrika first, then normalize it"
             }
 
-        # Convert to VisitEvent (simplified)
+        # Convert to VisitEvent
         raw_events = []
         for row in result.data:
             try:
+                # Parse occurred_at (required field)
+                occurred_at = None
+                if row.get("occurred_at"):
+                    if isinstance(row["occurred_at"], str):
+                        # Handle ISO format strings
+                        occurred_at_str = row["occurred_at"].replace("Z", "+00:00")
+                        occurred_at = datetime.fromisoformat(occurred_at_str)
+                    else:
+                        occurred_at = row["occurred_at"]
+                else:
+                    # Fallback to created_at if occurred_at is missing
+                    if row.get("created_at"):
+                        if isinstance(row["created_at"], str):
+                            occurred_at = datetime.fromisoformat(row["created_at"].replace("Z", "+00:00"))
+                        else:
+                            occurred_at = row["created_at"]
+                    else:
+                        occurred_at = datetime.utcnow()
+                
+                # Parse source (required field)
+                source_value = row.get("source")
+                if not source_value:
+                    logger.warning(f"Skipping event {row.get('id')}: missing source")
+                    continue
+                
                 event = VisitEvent(
                     event_id=row.get("id"),
-                    source=row.get("source"),
-                    occurred_at=datetime.fromisoformat(row["occurred_at"]) if row.get("occurred_at") else None,
+                    source=source_value,
+                    user_id=row.get("user_id"),
+                    session_id=row.get("session_id"),
+                    occurred_at=occurred_at,
                     url=row.get("url"),
+                    referrer=row.get("referrer"),
                     utm_source=row.get("utm_source"),
                     utm_medium=row.get("utm_medium"),
+                    utm_campaign=row.get("utm_campaign"),
+                    is_new_visitor=row.get("is_new_visitor"),
+                    page_views=row.get("page_views"),
+                    active_time_sec=row.get("raw_visit_duration"),  # Use raw_visit_duration as active_time_sec
+                    country=row.get("country"),
+                    city=row.get("city"),
+                    device_type=row.get("device_type"),
                 )
                 raw_events.append(event)
             except Exception as e:
-                logger.warning(f"Failed to parse raw event: {e}")
+                logger.warning(f"Failed to parse normalized event {row.get('id')}: {e}")
 
         # Run pipeline
         pipeline = LLMPipeline(db_client=supabase)

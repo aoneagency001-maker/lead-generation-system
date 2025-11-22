@@ -35,6 +35,7 @@ from data_intake.models import (
 )
 from data_intake.providers.base import BaseAnalyticsProvider
 from data_intake.providers.yandex_metrika import YandexMetrikaProvider
+from data_intake.providers.google_analytics import GoogleAnalyticsProvider
 
 logger = logging.getLogger(__name__)
 
@@ -84,19 +85,21 @@ class DataIntakePipeline:
 
     def _register_providers(self) -> None:
         """Register available data providers."""
+        # Register Yandex.Metrika
         try:
             yandex = YandexMetrikaProvider()
             self.providers[SourceType.YANDEX_METRIKA] = yandex
-            logger.info("Registered Yandex.Metrika provider")
+            logger.info("✅ Registered Yandex.Metrika provider")
         except Exception as e:
-            logger.warning(f"Yandex.Metrika provider not available: {e}")
+            logger.warning(f"⚠️ Yandex.Metrika provider not available: {e}")
 
-        # Future providers:
-        # try:
-        #     ga = GoogleAnalyticsProvider()
-        #     self.providers[SourceType.GOOGLE_ANALYTICS] = ga
-        # except Exception:
-        #     pass
+        # Register Google Analytics 4
+        try:
+            ga = GoogleAnalyticsProvider()
+            self.providers[SourceType.GOOGLE_ANALYTICS] = ga
+            logger.info("✅ Registered Google Analytics 4 provider")
+        except Exception as e:
+            logger.warning(f"⚠️ Google Analytics provider not available: {e}")
 
     async def run_full_pipeline(
         self,

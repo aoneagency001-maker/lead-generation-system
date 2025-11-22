@@ -23,6 +23,7 @@ from data_intake.models import (
     VisitEvent,
     VisitsResponse,
 )
+from data_intake.pipeline import PipelineError
 from data_intake.providers.base import (
     ProviderAPIError,
     ProviderAuthError,
@@ -163,10 +164,11 @@ async def list_sources():
     List all registered data sources.
 
     Returns:
-        List of available source types
+        List of available source types (from pipeline providers)
     """
-    service = get_data_intake_service()
-    sources = service.get_registered_sources()
+    # Use pipeline to get registered providers
+    pipeline = get_pipeline()
+    sources = list(pipeline.providers.keys())
 
     return SourcesListResponse(
         sources=[s.value for s in sources],
@@ -393,6 +395,17 @@ async def run_pipeline(request: PipelineRunRequest):
     try:
         status = await pipeline.run_full_pipeline(source_type, start_date, end_date)
         return status
+    except PipelineError as e:
+        logger.error(f"Pipeline error: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "Provider not available",
+                "detail": str(e),
+                "source": source_type.value,
+                "suggestion": f"Configure {source_type.value} provider. Check environment variables."
+            }
+        )
     except Exception as e:
         logger.error(f"Pipeline failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))

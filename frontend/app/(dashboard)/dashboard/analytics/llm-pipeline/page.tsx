@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { useToast } from "@/hooks/use-toast"
 import {
   Brain,
   Sparkles,
@@ -59,23 +60,47 @@ interface QueueStatus {
 }
 
 export default function LLMPipelinePage() {
+  const { toast } = useToast()
   const [status, setStatus] = useState<LLMStatus | null>(null)
   const [insights, setInsights] = useState<Insight[]>([])
   const [queue, setQueue] = useState<QueueStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [running, setRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [pipelineProgress, setPipelineProgress] = useState<{
+    stage: string
+    progress: number
+    message: string
+  } | null>(null)
 
-  const fetchData = async () => {
+  const fetchData = async (showToast = false) => {
     try {
       setLoading(true)
       setError(null)
+      
+      if (showToast) {
+        toast({
+          title: "Обновление данных...",
+          description: "Загрузка статуса LLM сервисов",
+        })
+      }
 
       // Fetch LLM status
       const statusRes = await fetch(`${API_BASE}/api/llm/status`)
       if (statusRes.ok) {
         const statusData = await statusRes.json()
+        console.log('LLM Status:', statusData)
         setStatus(statusData)
+      } else {
+        console.error('Failed to fetch LLM status:', statusRes.status, statusRes.statusText)
+        setError(`Failed to fetch status: ${statusRes.statusText}`)
+        if (showToast) {
+          toast({
+            title: "Ошибка загрузки",
+            description: `Не удалось загрузить статус: ${statusRes.statusText}`,
+            variant: "destructive",
+          })
+        }
       }
 
       // Fetch latest insights
@@ -91,21 +116,51 @@ export default function LLMPipelinePage() {
         const queueData = await queueRes.json()
         setQueue(queueData.queue_status)
       }
+      
+      if (showToast) {
+        toast({
+          title: "Данные обновлены",
+          description: "Статус успешно загружен",
+        })
+      }
     } catch (err) {
-      setError("Failed to fetch LLM pipeline data")
+      const errorMsg = err instanceof Error ? err.message : "Failed to fetch LLM pipeline data"
+      setError(errorMsg)
       console.error(err)
+      if (showToast) {
+        toast({
+          title: "Ошибка",
+          description: errorMsg,
+          variant: "destructive",
+        })
+      }
     } finally {
       setLoading(false)
     }
   }
 
   const runPipeline = async () => {
+    console.log('🚀 runPipeline called!', { API_BASE, status })
+    
     try {
       setRunning(true)
+      setError(null)
+      setPipelineProgress({ stage: "Инициализация", progress: 0, message: "Подготовка к запуску..." })
+      
       const today = new Date().toISOString().split('T')[0]
       const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
 
-      const res = await fetch(`${API_BASE}/api/llm/pipeline/run`, {
+      toast({
+        title: "Запуск Pipeline",
+        description: `Обработка данных с ${weekAgo} по ${today}`,
+      })
+
+      setPipelineProgress({ stage: "Загрузка данных", progress: 20, message: "Получение событий из БД..." })
+
+      const url = `${API_BASE}/api/llm/pipeline/run`
+      console.log('🌐 Fetching:', url)
+
+      const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -116,17 +171,77 @@ export default function LLMPipelinePage() {
         })
       })
 
+      console.log('✅ Pipeline response:', res.status, res.statusText)
+
       if (res.ok) {
+        const result = await res.json()
+        console.log('📊 Pipeline result:', result)
+        
+        // Check if no data or needs normalization
+        if (result.status === "no_data" || result.status === "needs_normalization") {
+          setPipelineProgress(null)
+          
+          toast({
+            title: result.status === "needs_normalization" ? "Требуется нормализация" : "Нет данных",
+            description: result.message || "Не найдено данных для обработки",
+            variant: result.status === "needs_normalization" ? "default" : "destructive",
+          })
+          
+          if (result.suggestion) {
+            setTimeout(() => {
+              toast({
+                title: "Рекомендация",
+                description: result.suggestion,
+              })
+            }, 2000)
+          }
+          
+          return
+        }
+        
+        setPipelineProgress({ stage: "Обработка", progress: 50, message: "Запуск LLM обработки..." })
+        setPipelineProgress({ stage: "Завершение", progress: 80, message: "Сохранение результатов..." })
+        
         await fetchData()
+        
+        setPipelineProgress({ stage: "Готово", progress: 100, message: "Pipeline успешно завершен" })
+        
+        toast({
+          title: "Pipeline завершен",
+          description: result.message || "Обработка данных успешно завершена",
+        })
+        
+        // Скрыть прогресс через 3 секунды
+        setTimeout(() => {
+          setPipelineProgress(null)
+        }, 3000)
       } else {
-        const err = await res.json()
-        setError(err.detail || 'Pipeline failed')
+        const err = await res.json().catch(() => ({ detail: `HTTP ${res.status}: ${res.statusText}` }))
+        console.error('❌ Pipeline error:', err)
+        const errorMsg = err.detail || 'Pipeline failed'
+        setError(errorMsg)
+        setPipelineProgress(null)
+        
+        toast({
+          title: "Ошибка Pipeline",
+          description: errorMsg,
+          variant: "destructive",
+        })
       }
     } catch (err) {
-      setError('Failed to run pipeline')
-      console.error(err)
+      console.error('💥 Pipeline exception:', err)
+      const errorMsg = `Failed to run pipeline: ${err instanceof Error ? err.message : String(err)}`
+      setError(errorMsg)
+      setPipelineProgress(null)
+      
+      toast({
+        title: "Ошибка",
+        description: errorMsg,
+        variant: "destructive",
+      })
     } finally {
       setRunning(false)
+      console.log('🏁 Pipeline finished')
     }
   }
 
@@ -182,15 +297,39 @@ export default function LLMPipelinePage() {
             3-layer AI processing: Normalization → Features → Insights
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={fetchData} disabled={loading}>
+        <div className="flex gap-2 items-center">
+          <Button 
+            variant="outline" 
+            onClick={() => fetchData(true)} 
+            disabled={loading || running}
+          >
             <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
+            {loading ? 'Обновление...' : 'Обновить'}
           </Button>
-          <Button onClick={runPipeline} disabled={running || status?.overall_status !== 'ready'}>
+          <Button 
+            onClick={() => {
+              console.log('🖱️ Button clicked!')
+              runPipeline()
+            }}
+            disabled={running || !status}
+            title={
+              !status 
+                ? 'Загрузка статуса...' 
+                : status.overall_status === 'ready' 
+                  ? 'Все сервисы готовы' 
+                  : status.overall_status === 'partial'
+                    ? 'Некоторые сервисы не настроены (будут использованы доступные)'
+                    : 'Сервисы не настроены'
+            }
+          >
             <Play className={`w-4 h-4 mr-2 ${running ? 'animate-pulse' : ''}`} />
-            {running ? 'Running...' : 'Run Pipeline'}
+            {running ? 'Запуск...' : 'Запустить Pipeline'}
           </Button>
+          {status && status.overall_status === 'partial' && (
+            <span className="text-xs text-muted-foreground ml-2">
+              (Частично: некоторые API не настроены)
+            </span>
+          )}
         </div>
       </div>
 
@@ -198,6 +337,22 @@ export default function LLMPipelinePage() {
         <Card className="border-destructive bg-destructive/10">
           <CardContent className="pt-4">
             <p className="text-destructive">{error}</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Pipeline Progress */}
+      {pipelineProgress && (
+        <Card className="border-blue-500 bg-blue-50 dark:bg-blue-950/20">
+          <CardContent className="pt-4">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-medium">{pipelineProgress.stage}</span>
+                <span className="text-sm text-muted-foreground">{pipelineProgress.progress}%</span>
+              </div>
+              <Progress value={pipelineProgress.progress} className="h-2" />
+              <p className="text-sm text-muted-foreground">{pipelineProgress.message}</p>
+            </div>
           </CardContent>
         </Card>
       )}

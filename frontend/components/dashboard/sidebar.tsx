@@ -37,7 +37,7 @@ export function Sidebar() {
   ];
 
   return (
-    <div className="flex h-full w-64 flex-col bg-background border-r">
+    <div className="hidden md:flex h-full w-64 flex-col bg-background border-r">
       {/* Logo & Language Selector */}
       <div className="flex h-16 items-center justify-between border-b px-6">
         <Link href="/dashboard" className="flex items-center">
