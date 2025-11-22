@@ -33,7 +33,7 @@ env:
   VPS_HOST: ${{ secrets.VPS_HOST }}
   VPS_USER: ${{ secrets.VPS_USER }}
   VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
-  VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH || '/opt/lead-generation-system' }}
+  VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH || '/home/ec2-user/lead-generation-system' }}
 
 jobs:
   deploy:
@@ -140,23 +140,34 @@ jobs:
             
             DEPLOY_PATH="${{ env.VPS_DEPLOY_PATH }}"
             VERSION="${{ env.VERSION }}"
-            BACKUP_PATH="/opt/backups/leadgen"
+            BACKUP_PATH="$HOME/backups/leadgen"
             
             echo "📦 Распаковка новой версии..."
-            mkdir -p "$DEPLOY_PATH"
+            echo "📁 Deploy path: $DEPLOY_PATH"
+            
+            # Создаём директорию с правильными правами
+            if [[ "$DEPLOY_PATH" == /opt/* ]]; then
+              # Для /opt нужен sudo
+              sudo mkdir -p "$DEPLOY_PATH" || true
+              sudo chown -R $USER:$USER "$DEPLOY_PATH" || true
+            else
+              # Для домашней директории sudo не нужен
+              mkdir -p "$DEPLOY_PATH"
+            fi
+            
             cd "$DEPLOY_PATH"
             
             # Создание резервной копии текущей версии
-            if [ -d "$DEPLOY_PATH" ] && [ "$(ls -A $DEPLOY_PATH)" ]; then
+            if [ -d "$DEPLOY_PATH" ] && [ "$(ls -A $DEPLOY_PATH 2>/dev/null)" ]; then
               echo "💾 Создание резервной копии..."
               mkdir -p "$BACKUP_PATH"
               tar -czf "$BACKUP_PATH/backup-$(date +%Y%m%d-%H%M%S).tar.gz" \
                 --exclude='venv' \
                 --exclude='__pycache__' \
-                -C "$DEPLOY_PATH" .
+                -C "$DEPLOY_PATH" . 2>/dev/null || true
               
               # Удаление старых бэкапов (оставляем последние 10)
-              ls -t "$BACKUP_PATH"/*.tar.gz | tail -n +11 | xargs rm -f || true
+              ls -t "$BACKUP_PATH"/*.tar.gz 2>/dev/null | tail -n +11 | xargs rm -f || true
             fi
             
             # Распаковка новой версии
