@@ -11,13 +11,17 @@ import {
   DollarSign,
   Megaphone,
   Flame,
+  BarChart3,
 } from 'lucide-react';
 import { useI18n } from '@/lib/i18n/context';
+import { CounterSelector } from '@/components/yandex-metrika/CounterSelector';
 
 export default function DashboardPage() {
   const { t } = useI18n();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [selectedCounterId, setSelectedCounterId] = useState<number | null>(null);
+  const [counterInfo, setCounterInfo] = useState<{ name: string; site: string } | null>(null);
 
   useEffect(() => {
     async function loadStats() {
@@ -116,6 +120,80 @@ export default function DashboardPage() {
           </Card>
         ))}
       </div>
+
+      {/* Yandex Metrika Test Section */}
+      <Card className="border-2 border-blue-200 dark:border-blue-800">
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <BarChart3 className="h-5 w-5 text-blue-500" />
+            <CardTitle>Тест интеграции Яндекс.Метрики</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <label className="text-sm font-medium mb-2 block">
+              Выберите счетчик Яндекс.Метрики:
+            </label>
+            <CounterSelector
+              onCounterSelect={(counterId) => {
+                setSelectedCounterId(counterId);
+                // Найдем информацию о счетчике
+                fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001'}/api/yandex-metrika/counters`)
+                  .then(res => res.json())
+                  .then(data => {
+                    const counter = data.counters?.find((c: any) => c.id === counterId);
+                    if (counter) {
+                      setCounterInfo({
+                        name: counter.name,
+                        site: counter.site || 'Не указан'
+                      });
+                    }
+                  })
+                  .catch(err => console.error('Ошибка получения информации о счетчике:', err));
+              }}
+              selectedCounterId={selectedCounterId}
+            />
+          </div>
+
+          {selectedCounterId && counterInfo && (
+            <div className="mt-4 p-4 bg-muted rounded-md space-y-2">
+              <div className="flex items-center gap-2">
+                <div className="h-2 w-2 rounded-full bg-green-500"></div>
+                <span className="text-sm font-medium">Счетчик выбран</span>
+              </div>
+              <div className="text-sm space-y-1">
+                <div>
+                  <span className="text-muted-foreground">ID:</span>{' '}
+                  <span className="font-mono font-medium">{selectedCounterId}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Название:</span>{' '}
+                  <span className="font-medium">{counterInfo.name}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Сайт:</span>{' '}
+                  <span className="font-medium">{counterInfo.site}</span>
+                </div>
+              </div>
+              <div className="mt-3 pt-3 border-t text-xs text-muted-foreground">
+                ✅ Счетчик сохранен в localStorage. Теперь можно использовать его ID для получения отчетов.
+              </div>
+            </div>
+          )}
+
+          {selectedCounterId && (
+            <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-950 rounded-md">
+              <p className="text-sm text-blue-900 dark:text-blue-100">
+                <strong>Готово к использованию!</strong> Выбранный счетчик (ID: {selectedCounterId}) можно использовать 
+                для получения отчетов через API endpoint: 
+                <code className="ml-1 px-1 py-0.5 bg-blue-100 dark:bg-blue-900 rounded text-xs">
+                  GET /api/yandex-metrika/counters/{selectedCounterId}/report
+                </code>
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Recent Activity / Charts Section */}
       <div className="grid gap-4 md:grid-cols-2">

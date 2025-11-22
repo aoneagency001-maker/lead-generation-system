@@ -64,3 +64,4 @@ class OLXSettings(BaseSettings):
 settings = OLXSettings()
 
 
+

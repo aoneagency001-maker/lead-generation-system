@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     
     # API Settings
     api_host: str = "0.0.0.0"
-    api_port: int = 8000
+    api_port: int = 8001
     debug: bool = False
     api_secret_key: str = "change-me-in-production"
 
@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     telegram_bot_token: Optional[str] = None
     telegram_notification_chat_id: Optional[str] = None
     telegram_sales_chat_id: Optional[str] = None
+    telegram_assistant_bot_token: Optional[str] = None
     
     # WhatsApp (WAHA)
     whatsapp_api_url: str = "http://localhost:3001"
@@ -63,7 +64,12 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4"
     openai_max_tokens: int = 500
     anthropic_api_key: Optional[str] = None
-    anthropic_model: str = "claude-3-5-sonnet-20241022"
+    anthropic_model: str = "claude-sonnet-4-5-20250929"
+    perplexity_api_key: Optional[str] = None
+    perplexity_model: str = "sonar"  # sonar (базовый), sonar-pro (продвинутый)
+    gemini_api_key: Optional[str] = None
+    gemini_model: str = "gemini-pro"
+    gemini_vision_model: str = "gemini-pro-vision"
     use_local_llm: bool = False
     ollama_base_url: str = "http://localhost:11434"
     
@@ -126,6 +132,13 @@ class Settings(BaseSettings):
     # Analytics
     ga_tracking_id: Optional[str] = None
     sentry_dsn: Optional[str] = None
+    
+    # Yandex Metrika
+    yandex_metrika_token: Optional[str] = None
+    
+    # Google Analytics 4
+    google_analytics_credentials_path: Optional[str] = None
+    google_analytics_property_id: Optional[str] = None
     
     class Config:
         env_file = ".env"

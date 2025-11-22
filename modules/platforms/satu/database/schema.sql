@@ -277,3 +277,4 @@ COMMENT ON COLUMN satu_products.external_id IS 'ID товара на satu.kz';
 COMMENT ON COLUMN satu_parsed_data.data IS 'JSONB массив с найденными товарами';
 
 
+

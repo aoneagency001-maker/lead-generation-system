@@ -504,3 +504,4 @@ from modules.platforms.satu.sdk import SatuClient
 **Дата**: 18 ноября 2025
 
 
+

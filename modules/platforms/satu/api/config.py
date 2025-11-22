@@ -62,3 +62,4 @@ class SatuSettings(BaseSettings):
 settings = SatuSettings()
 
 
+

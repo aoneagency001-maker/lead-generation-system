@@ -1,0 +1,114 @@
+service: telegram-notifications-service
+
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: nodejs18.x
+  region: ${opt:region, 'eu-central-1'}
+  stage: ${opt:stage, 'dev'}
+  memorySize: 256
+  timeout: 30
+  
+  environment:
+    NODE_ENV: ${self:provider.stage}
+    LOG_LEVEL: ${env:LOG_LEVEL, 'info'}
+    DYNAMODB_TABLE: ${self:service}-events-${self:provider.stage}
+    CLOUDWATCH_NAMESPACE: ${self:service}/${self:provider.stage}
+    # ⚠️ БЕЗОПАСНОСТЬ: Токены должны быть установлены через env переменные
+    TELEGRAM_BOT_TOKEN: ${env:TELEGRAM_BOT_TOKEN, ''}
+    TELEGRAM_CHAT_ID: ${env:TELEGRAM_CHAT_ID, ''}
+    METRIKA_TOKEN: ${env:METRIKA_TOKEN, ''}
+    METRIKA_COUNTER_ID: ${env:METRIKA_COUNTER_ID, ''}
+    NOTIFY_ON_METRIKA: ${env:NOTIFY_ON_METRIKA, 'false'}
+  
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:PutItem
+            - dynamodb:GetItem
+            - dynamodb:Query
+            - dynamodb:UpdateItem
+          Resource:
+            - arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.DYNAMODB_TABLE}
+            - arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.DYNAMODB_TABLE}/index/*
+        - Effect: Allow
+          Action:
+            - cloudwatch:PutMetricData
+          Resource: '*'
+
+functions:
+  trackVisitor:
+    handler: dist/handlers/track-visitor.handler
+    description: Track visitor events and send Telegram notifications
+    events:
+      - httpApi:
+          path: /track-visitor
+          method: post
+  
+  tildaWebhook:
+    handler: dist/handlers/tilda-webhook.handler
+    description: Handle Tilda webhook submissions
+    events:
+      - httpApi:
+          path: /tilda-webhook
+          method: post
+  
+  metrikaWebhook:
+    handler: dist/handlers/metrika-webhook.handler
+    description: Handle Yandex Metrika webhook events
+    events:
+      - httpApi:
+          path: /metrika-webhook
+          method: post
+  
+  health:
+    handler: dist/handlers/health.handler
+    description: Health check endpoint
+    events:
+      - httpApi:
+          path: /health
+          method: get
+
+plugins:
+  - serverless-offline
+
+resources:
+  Resources:
+    EventsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.DYNAMODB_TABLE}
+        AttributeDefinitions:
+          - AttributeName: pk
+            AttributeType: S
+          - AttributeName: sk
+            AttributeType: S
+        KeySchema:
+          - AttributeName: pk
+            KeyType: HASH
+          - AttributeName: sk
+            KeyType: RANGE
+        BillingMode: PAY_PER_REQUEST
+        TimeToLiveSpecification:
+          AttributeName: ttl
+          Enabled: true
+        StreamSpecification:
+          StreamEnabled: true
+          StreamViewType: NEW_AND_OLD_IMAGES
+        Tags:
+          - Key: Service
+            Value: ${self:service}
+          - Key: Stage
+            Value: ${self:provider.stage}
+  
+  Outputs:
+    ServiceEndpoint:
+      Description: "API Gateway endpoint URL"
+      Value:
+        Fn::GetAtt:
+          - HttpApi
+          - ApiEndpoint
+

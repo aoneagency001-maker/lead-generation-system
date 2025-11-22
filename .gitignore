@@ -32,12 +32,23 @@ env/
 .env.staging
 .env.*.local
 
+# Credentials (Service Accounts, API Keys, etc.)
+credentials/
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+!tsconfig.*.json
+
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
+
+# Cursor AI Rules (Confidential - DO NOT COMMIT)
+.cursorrules
 
 # OS
 .DS_Store

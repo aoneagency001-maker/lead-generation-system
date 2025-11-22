@@ -1,0 +1,49 @@
+{
+  "name": "telegram-notifications-service",
+  "version": "2.0.0",
+  "description": "Production-ready микросервис трекинга и Telegram-уведомлений на AWS Lambda",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "deploy": "serverless deploy",
+    "deploy:dev": "serverless deploy --stage dev",
+    "deploy:prod": "serverless deploy --stage prod",
+    "offline": "serverless offline",
+    "test": "jest",
+    "lint": "eslint src/**/*.ts",
+    "format": "prettier --write src/**/*.ts"
+  },
+  "keywords": [
+    "telegram",
+    "notifications",
+    "tracking",
+    "lambda",
+    "serverless",
+    "aws"
+  ],
+  "author": "Lead Generation System",
+  "license": "MIT",
+  "dependencies": {
+    "@aws-sdk/client-cloudwatch": "^3.490.0",
+    "@aws-sdk/client-cloudwatch-logs": "^3.936.0",
+    "@aws-sdk/client-dynamodb": "^3.490.0",
+    "@aws-sdk/client-ssm": "^3.936.0",
+    "@aws-sdk/lib-dynamodb": "^3.490.0",
+    "@types/uuid": "^10.0.0",
+    "axios": "^1.6.2",
+    "uuid": "^13.0.0"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.130",
+    "@types/node": "^20.10.5",
+    "@typescript-eslint/eslint-plugin": "^6.15.0",
+    "@typescript-eslint/parser": "^6.15.0",
+    "eslint": "^8.56.0",
+    "prettier": "^3.1.1",
+    "serverless": "^3.38.0",
+    "serverless-offline": "^13.3.0",
+    "serverless-plugin-typescript": "^2.0.0",
+    "serverless-ssm-fetch": "^2.0.0",
+    "typescript": "^5.3.3"
+  }
+}

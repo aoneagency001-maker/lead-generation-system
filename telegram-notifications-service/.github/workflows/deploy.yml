@@ -1,0 +1,185 @@
+name: 🚀 Deploy to AWS Lambda
+
+on:
+  # Деплой при push в main
+  push:
+    branches:
+      - main
+    paths:
+      - 'telegram-notifications-service/**'
+      - '.github/workflows/deploy.yml'
+  # Ручной запуск
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: 'Deployment stage'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - prod
+
+env:
+  AWS_REGION: eu-central-1
+  NODE_VERSION: '18.x'
+
+jobs:
+  deploy:
+    name: Deploy to AWS Lambda
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 📦 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: telegram-notifications-service/package-lock.json
+
+      - name: 📥 Install dependencies
+        working-directory: telegram-notifications-service
+        run: |
+          npm ci
+
+      - name: 🔨 Build TypeScript
+        working-directory: telegram-notifications-service
+        run: |
+          npm run build
+
+      - name: 🔐 Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: 📥 Load SSM parameters
+        id: ssm
+        working-directory: telegram-notifications-service
+        run: |
+          # Загружаем параметры из SSM
+          export TELEGRAM_BOT_TOKEN=$(aws ssm get-parameter \
+            --name "/telegram-notifications/BOT_TOKEN" \
+            --with-decryption \
+            --query 'Parameter.Value' \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+          
+          export TELEGRAM_CHAT_ID=$(aws ssm get-parameter \
+            --name "/telegram-notifications/CHAT_ID" \
+            --query 'Parameter.Value' \
+            --output text \
+            --region ${{ env.AWS_REGION }} || echo "")
+          
+          # Сохраняем в GitHub Actions output
+          echo "TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN" >> $GITHUB_ENV
+          echo "TELEGRAM_CHAT_ID=$TELEGRAM_CHAT_ID" >> $GITHUB_ENV
+          
+          echo "✅ SSM parameters loaded"
+
+      - name: 📦 Install Serverless Framework
+        run: |
+          npm install -g serverless@3
+
+      - name: 🚀 Deploy to AWS
+        working-directory: telegram-notifications-service
+        run: |
+          STAGE=${{ github.event.inputs.stage || 'dev' }}
+          npx serverless deploy --stage $STAGE --verbose
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ env.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ env.TELEGRAM_CHAT_ID }}
+
+      - name: 📋 Get deployment info
+        id: deployment
+        working-directory: telegram-notifications-service
+        run: |
+          STAGE=${{ github.event.inputs.stage || 'dev' }}
+          
+          # Получаем endpoint URL
+          ENDPOINT=$(npx serverless info --stage $STAGE --verbose 2>&1 | grep -oP 'https://[^\s]+' | head -1 || echo "")
+          
+          if [ -z "$ENDPOINT" ]; then
+            # Альтернативный способ получения URL
+            ENDPOINT=$(aws apigatewayv2 get-apis \
+              --region ${{ env.AWS_REGION }} \
+              --query "Items[?contains(Name, 'telegram-notifications-service-$STAGE')].ApiEndpoint" \
+              --output text | head -1)
+          fi
+          
+          echo "endpoint=$ENDPOINT" >> $GITHUB_OUTPUT
+          echo "stage=$STAGE" >> $GITHUB_OUTPUT
+          
+          echo "🌐 Endpoint: $ENDPOINT"
+          echo "📊 Stage: $STAGE"
+
+      - name: 🧪 Test endpoints
+        working-directory: telegram-notifications-service
+        run: |
+          ENDPOINT="${{ steps.deployment.outputs.endpoint }}"
+          
+          if [ -z "$ENDPOINT" ]; then
+            echo "⚠️ Endpoint not found, skipping tests"
+            exit 0
+          fi
+          
+          echo "🧪 Testing endpoints..."
+          
+          # Health check
+          echo "Testing /health..."
+          HEALTH_RESPONSE=$(curl -s -w "\n%{http_code}" "$ENDPOINT/health" || echo "ERROR")
+          HEALTH_CODE=$(echo "$HEALTH_RESPONSE" | tail -1)
+          HEALTH_BODY=$(echo "$HEALTH_RESPONSE" | head -1)
+          
+          if [ "$HEALTH_CODE" = "200" ]; then
+            echo "✅ Health check passed"
+            echo "$HEALTH_BODY" | jq '.' || echo "$HEALTH_BODY"
+          else
+            echo "❌ Health check failed: HTTP $HEALTH_CODE"
+            echo "$HEALTH_BODY"
+            exit 1
+          fi
+          
+          # Test track-visitor (optional, не падаем если ошибка)
+          echo ""
+          echo "Testing /track-visitor..."
+          TRACK_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$ENDPOINT/track-visitor" \
+            -H "Content-Type: application/json" \
+            -H "User-Agent: GitHub-Actions-Test" \
+            -d '{"clientId":"github-actions-test","page":"/test","referrer":"https://github.com"}' \
+            || echo "ERROR")
+          TRACK_CODE=$(echo "$TRACK_RESPONSE" | tail -1)
+          TRACK_BODY=$(echo "$TRACK_RESPONSE" | head -1)
+          
+          if [ "$TRACK_CODE" = "200" ]; then
+            echo "✅ Track-visitor test passed"
+            echo "$TRACK_BODY" | jq '.' || echo "$TRACK_BODY"
+          else
+            echo "⚠️ Track-visitor test returned HTTP $TRACK_CODE (not critical)"
+            echo "$TRACK_BODY"
+          fi
+
+      - name: 📊 Deployment summary
+        run: |
+          echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Stage:** ${{ steps.deployment.outputs.stage }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Endpoint:** ${{ steps.deployment.outputs.endpoint }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 Endpoints:" >> $GITHUB_STEP_SUMMARY
+          echo "- **GET** \`/health\` - Health check" >> $GITHUB_STEP_SUMMARY
+          echo "- **POST** \`/track-visitor\` - Track visitors" >> $GITHUB_STEP_SUMMARY
+          echo "- **POST** \`/tilda-webhook\` - Tilda webhook" >> $GITHUB_STEP_SUMMARY
+          echo "- **POST** \`/metrika-webhook\` - Metrika webhook" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 Quick Links:" >> $GITHUB_STEP_SUMMARY
+          echo "- [CloudWatch Logs](https://console.aws.amazon.com/cloudwatch/home?region=${{ env.AWS_REGION }}#logsV2:log-groups)" >> $GITHUB_STEP_SUMMARY
+          echo "- [Lambda Functions](https://console.aws.amazon.com/lambda/home?region=${{ env.AWS_REGION }}#/functions)" >> $GITHUB_STEP_SUMMARY
+          echo "- [API Gateway](https://console.aws.amazon.com/apigateway/home?region=${{ env.AWS_REGION }}#/apis)" >> $GITHUB_STEP_SUMMARY
+

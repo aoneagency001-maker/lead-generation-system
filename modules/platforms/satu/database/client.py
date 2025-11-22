@@ -32,3 +32,4 @@ async def get_db():
     yield get_supabase_client()
 
 
+

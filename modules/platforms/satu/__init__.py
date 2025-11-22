@@ -8,3 +8,4 @@ __module_name__ = "satu"
 __platform__ = "Satu.kz"
 
 
+

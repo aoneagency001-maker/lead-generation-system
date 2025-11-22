@@ -42,6 +42,7 @@ class CompetitorParserSettings(BaseSettings):
         env_prefix = "PARSER_"
         env_file = ".env"
         case_sensitive = False
+        extra = "ignore"  # Игнорировать дополнительные поля из .env
 
 
 # Глобальный экземпляр настроек

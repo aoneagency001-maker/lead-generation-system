@@ -196,3 +196,4 @@ COMMENT ON COLUMN olx_ads.external_id IS 'ID объявления на olx.kz';
 COMMENT ON COLUMN olx_parsed_data.data IS 'JSONB массив с найденными объявлениями';
 
 
+

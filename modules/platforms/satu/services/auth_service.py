@@ -271,3 +271,4 @@ class SatuAuthService:
             logger.error(f"Update last API call error: {e}")
 
 
+

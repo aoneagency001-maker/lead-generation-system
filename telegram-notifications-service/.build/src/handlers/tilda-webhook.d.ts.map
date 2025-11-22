@@ -1,0 +1,1 @@
+{"version":3,"file":"tilda-webhook.d.ts","sourceRoot":"","sources":["../../../src/handlers/tilda-webhook.ts"],"names":[],"mappings":"AAAA;;;GAGG;AAEH,OAAO,EAAE,oBAAoB,EAAE,qBAAqB,EAAE,MAAM,YAAY,CAAC;AA4FzE;;GAEG;AACH,wBAAsB,OAAO,CAC3B,KAAK,EAAE,oBAAoB,GAC1B,OAAO,CAAC,qBAAqB,CAAC,CAuIhC"}
