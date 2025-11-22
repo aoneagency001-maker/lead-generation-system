@@ -414,23 +414,27 @@ class DataIntakePipeline:
                         return None
                     return val
 
-                date_str = get_dim(0)
-                url = get_dim(1)
-                referrer = get_dim(2)
-                utm_source = get_dim(3)
-                utm_medium = get_dim(4)
-                utm_campaign = get_dim(5)
-                is_new_str = get_dim(6)
-                device = get_dim(7)
-                browser = get_dim(8)
-                os = get_dim(9)
-                country = get_dim(10)
-                city = get_dim(11)
+                date_str = get_dim(0)      # ym:s:date
+                url = get_dim(1)           # ym:s:startURL
+                referrer = get_dim(2)      # ym:s:referer
+                utm_source = get_dim(3)     # ym:s:UTMSource
+                utm_medium = get_dim(4)    # ym:s:UTMMedium
+                utm_campaign = get_dim(5)  # ym:s:UTMCampaign
+                is_new_str = get_dim(6)    # ym:s:isNewUser
+                device = get_dim(7)        # ym:s:deviceCategory
+                country = get_dim(8)       # ym:s:regionCountry
+                city = get_dim(9)          # ym:s:regionCity
+                # browser и os убраны (превышали лимит dimensions)
 
-                # Parse date
+                # Parse date (используем правильный метод для date-only строк)
                 try:
-                    occurred_at = datetime.strptime(date_str, "%Y-%m-%d") if date_str else datetime.utcnow()
-                except ValueError:
+                    if date_str:
+                        from datetime import date as date_type
+                        parsed_date = date_type.fromisoformat(date_str)
+                        occurred_at = datetime.combine(parsed_date, datetime.min.time())
+                    else:
+                        occurred_at = datetime.utcnow()
+                except (ValueError, AttributeError):
                     occurred_at = datetime.utcnow()
 
                 # Parse is_new_visitor
@@ -460,8 +464,8 @@ class DataIntakePipeline:
                     utm_campaign=utm_campaign,
                     traffic_source_type=traffic_type,
                     device_type=device,
-                    browser=browser,
-                    os=os,
+                    browser=None,  # Убрано из запроса (превышало лимит dimensions)
+                    os=None,      # Убрано из запроса (превышало лимит dimensions)
                     country=country,
                     city=city,
                     page_views=page_views or visits,
