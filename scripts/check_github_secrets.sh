@@ -48,7 +48,7 @@ echo ""
 
 # Получаем список секретов
 echo "🔍 Проверка секретов..."
-SECRETS=$(gh secret list --repo "$REPO" 2>/dev/null | awk 'NR>1 {print $1}' || echo "")
+SECRETS=$(gh secret list --repo "$REPO" 2>/dev/null | tail -n +2 | awk '{print $1}' || echo "")
 
 # Список обязательных секретов для деплоя
 REQUIRED_SECRETS=(
