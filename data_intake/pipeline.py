@@ -396,13 +396,23 @@ class DataIntakePipeline:
                 dims = row.get("dimensions", [])
 
                 # Extract dimension values
+                # Dimensions can be: [{"name": "value"}] or ["value"] (string list)
                 def get_dim(index: int) -> Optional[str]:
-                    if index < len(dims):
-                        val = dims[index].get("name", "")
-                        if val in ("", "null", "(not set)", "(прямой трафик)"):
-                            return None
-                        return val
-                    return None
+                    if index >= len(dims):
+                        return None
+                    
+                    dim = dims[index]
+                    # Handle both formats: {"name": "value"} or just "value"
+                    if isinstance(dim, dict):
+                        val = dim.get("name", "")
+                    elif isinstance(dim, str):
+                        val = dim
+                    else:
+                        val = str(dim) if dim is not None else ""
+                    
+                    if val in ("", "null", "(not set)", "(прямой трафик)", "None"):
+                        return None
+                    return val
 
                 date_str = get_dim(0)
                 url = get_dim(1)
