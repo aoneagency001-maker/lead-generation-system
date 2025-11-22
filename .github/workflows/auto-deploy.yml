@@ -125,16 +125,42 @@ jobs:
             echo "❌ Deployment package not found: deploy/leadgen-${{ env.VERSION }}.tar.gz"
             exit 1
           fi
-          scp -o StrictHostKeyChecking=no \
-              -o ConnectTimeout=30 \
-              deploy/leadgen-${{ env.VERSION }}.tar.gz \
-              ${{ env.VPS_USER }}@${{ env.VPS_HOST }}:/tmp/
-          echo "✅ Package uploaded successfully"
+          
+          # Retry логика для SCP
+          MAX_RETRIES=3
+          RETRY_COUNT=0
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            echo "📤 Попытка загрузки ($((RETRY_COUNT + 1))/$MAX_RETRIES)..."
+            if scp -o StrictHostKeyChecking=no \
+                -o ConnectTimeout=60 \
+                -o ServerAliveInterval=30 \
+                -o ServerAliveCountMax=3 \
+                -o BatchMode=yes \
+                -o UserKnownHostsFile=/dev/null \
+                deploy/leadgen-${{ env.VERSION }}.tar.gz \
+                ${{ env.VPS_USER }}@${{ env.VPS_HOST }}:/tmp/; then
+              echo "✅ Package uploaded successfully"
+              break
+            else
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+                echo "⚠️ Загрузка не удалась, повтор через 10 секунд..."
+                sleep 10
+              else
+                echo "❌ Не удалось загрузить пакет после $MAX_RETRIES попыток"
+                exit 1
+              fi
+            fi
+          done
 
       - name: 🚀 Deploy on VPS
         run: |
           ssh -o StrictHostKeyChecking=no \
-              -o ConnectTimeout=30 \
+              -o ConnectTimeout=60 \
+              -o ServerAliveInterval=30 \
+              -o ServerAliveCountMax=3 \
+              -o BatchMode=yes \
+              -o UserKnownHostsFile=/dev/null \
               ${{ env.VPS_USER }}@${{ env.VPS_HOST }} << 'ENDSSH'
             set -e
             
@@ -189,7 +215,11 @@ jobs:
         if: env.VPS_HOST != ''
         run: |
           ssh -o StrictHostKeyChecking=no \
-              -o ConnectTimeout=30 \
+              -o ConnectTimeout=60 \
+              -o ServerAliveInterval=30 \
+              -o ServerAliveCountMax=3 \
+              -o BatchMode=yes \
+              -o UserKnownHostsFile=/dev/null \
               ${{ env.VPS_USER }}@${{ env.VPS_HOST }} << 'ENDSSH'
             DEPLOY_PATH="${{ env.VPS_DEPLOY_PATH }}"
             
@@ -255,7 +285,11 @@ jobs:
       - name: 🔄 Restart services on VPS
         run: |
           ssh -o StrictHostKeyChecking=no \
-              -o ConnectTimeout=30 \
+              -o ConnectTimeout=60 \
+              -o ServerAliveInterval=30 \
+              -o ServerAliveCountMax=3 \
+              -o BatchMode=yes \
+              -o UserKnownHostsFile=/dev/null \
               ${{ env.VPS_USER }}@${{ env.VPS_HOST }} << 'ENDSSH'
             set -e
             
