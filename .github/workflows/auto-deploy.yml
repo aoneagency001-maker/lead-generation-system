@@ -266,13 +266,21 @@ jobs:
             
             # Перезапуск Docker контейнеров
             if [ -f docker-compose.yml ]; then
-              docker-compose down
-              docker-compose up -d --build
+              # Проверяем, нужен ли sudo для docker
+              if docker ps >/dev/null 2>&1; then
+                docker-compose down || true
+                docker-compose up -d --build || true
+              elif sudo docker ps >/dev/null 2>&1; then
+                sudo docker-compose down || true
+                sudo docker-compose up -d --build || true
+              else
+                echo "⚠️ Docker не доступен, пропускаем перезапуск контейнеров"
+              fi
             fi
             
             # Перезапуск systemd сервиса (если настроен)
-            if systemctl is-active --quiet leadgen-api; then
-              systemctl restart leadgen-api
+            if sudo systemctl is-active --quiet leadgen-api 2>/dev/null; then
+              sudo systemctl restart leadgen-api || true
             fi
             
             echo "✅ Сервисы перезапущены"
