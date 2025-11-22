@@ -54,7 +54,6 @@ jobs:
 
       - name: 🏷️ Create version tag
         id: version
-        if: github.ref == 'refs/heads/main'
         run: |
           # Получаем последний тег
           git fetch --prune --unshallow --tags || true
@@ -74,9 +73,13 @@ jobs:
           echo "VERSION=$FULL_VERSION" >> $GITHUB_ENV
           echo "SHORT_SHA=$SHORT_SHA" >> $GITHUB_ENV
           
-          # Создаём тег
-          git tag -a "$FULL_VERSION" -m "Auto-deploy: $FULL_VERSION (commit: $SHORT_SHA)"
-          git push origin "$FULL_VERSION" || echo "⚠️ Failed to push tag (may already exist)"
+          # Создаём тег только для main ветки
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            git tag -a "$FULL_VERSION" -m "Auto-deploy: $FULL_VERSION (commit: $SHORT_SHA)"
+            git push origin "$FULL_VERSION" || echo "⚠️ Failed to push tag (may already exist)"
+          else
+            echo "ℹ️ Not on main branch, skipping tag push"
+          fi
 
       - name: 📦 Create deployment package
         run: |
@@ -124,7 +127,9 @@ jobs:
 
       - name: 🚀 Deploy on VPS
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ env.VPS_USER }}@${{ env.VPS_HOST }} << 'ENDSSH'
+          ssh -o StrictHostKeyChecking=no \
+              -o ConnectTimeout=30 \
+              ${{ env.VPS_USER }}@${{ env.VPS_HOST }} << 'ENDSSH'
             set -e
             
             DEPLOY_PATH="${{ env.VPS_DEPLOY_PATH }}"
@@ -230,7 +235,9 @@ jobs:
 
       - name: 🔄 Restart services on VPS
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ env.VPS_USER }}@${{ env.VPS_HOST }} << 'ENDSSH'
+          ssh -o StrictHostKeyChecking=no \
+              -o ConnectTimeout=30 \
+              ${{ env.VPS_USER }}@${{ env.VPS_HOST }} << 'ENDSSH'
             set -e
             
             DEPLOY_PATH="${{ env.VPS_DEPLOY_PATH }}"
