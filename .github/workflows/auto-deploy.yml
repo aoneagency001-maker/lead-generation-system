@@ -268,11 +268,15 @@ jobs:
             if [ -f docker-compose.yml ]; then
               # Проверяем, нужен ли sudo для docker
               if docker ps >/dev/null 2>&1; then
-                docker-compose down || true
-                docker-compose up -d --build || true
+                echo "🛑 Остановка существующих контейнеров..."
+                docker-compose down --remove-orphans || true
+                echo "🚀 Запуск новых контейнеров..."
+                docker-compose up -d --build --remove-orphans || true
               elif sudo docker ps >/dev/null 2>&1; then
-                sudo docker-compose down || true
-                sudo docker-compose up -d --build || true
+                echo "🛑 Остановка существующих контейнеров..."
+                sudo docker-compose down --remove-orphans || true
+                echo "🚀 Запуск новых контейнеров..."
+                sudo docker-compose up -d --build --remove-orphans || true
               else
                 echo "⚠️ Docker не доступен, пропускаем перезапуск контейнеров"
               fi
