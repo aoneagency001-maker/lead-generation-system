@@ -19,13 +19,15 @@
 # ============================================
 
 # Bot для мониторинга и ошибок (Monitoring Bot)
-TELEGRAM_MONITOR_BOT_TOKEN=7848265878:AAFkCTv7xWNj7Se4RAq8XkMC_7vlxZLT0-k
-TELEGRAM_MONITOR_CHAT_ID=280192618
+# ⚠️ ВАЖНО: НЕ КОММИТЬТЕ РЕАЛЬНЫЕ ТОКЕНЫ В GIT!
+# Используйте GitHub Secrets или локальный .env файл
+TELEGRAM_MONITOR_BOT_TOKEN=your_telegram_bot_token_here
+TELEGRAM_MONITOR_CHAT_ID=your_chat_id_here
 
 # Старые переменные (можно оставить для обратной совместимости)
-TELEGRAM_BOT_TOKEN=7848265878:AAFkCTv7xWNj7Se4RAq8XkMC_7vlxZLT0-k
-TELEGRAM_NOTIFICATION_CHAT_ID=280192618
-TELEGRAM_SALES_CHAT_ID=280192618
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
+TELEGRAM_NOTIFICATION_CHAT_ID=your_chat_id_here
+TELEGRAM_SALES_CHAT_ID=your_chat_id_here
 ```
 
 ### Вариант 2: Оставить как есть (работает автоматически)

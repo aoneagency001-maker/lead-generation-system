@@ -17,8 +17,10 @@ import {
   Layers,
   TrendingUp,
   Users,
-  Filter
+  Filter,
+  Loader2
 } from 'lucide-react';
+import { Progress } from '@/components/ui/progress';
 import { apiClient } from '@/lib/api-client';
 
 interface PipelineStatus {
@@ -75,6 +77,11 @@ export default function DataIntakePage() {
   const [loading, setLoading] = useState(false);
   const [loadingFeatures, setLoadingFeatures] = useState(false);
   const [minHotScore, setMinHotScore] = useState(50);
+  const [pipelineProgress, setPipelineProgress] = useState<{
+    stage: string;
+    progress: number;
+    message: string;
+  } | null>(null);
 
   // Load initial data
   useEffect(() => {
@@ -116,15 +123,18 @@ export default function DataIntakePage() {
   const loadFeatures = async () => {
     setLoadingFeatures(true);
     try {
+      console.log('🔄 Loading features...', { source: selectedSource, dateFrom, dateTo });
       const data = await apiClient.getDataIntakeFeatures({
         source: selectedSource,
         dateFrom,
         dateTo,
         limit: 100,
       });
-      setFeatures(data.items);
-    } catch (error) {
-      console.error('Failed to load features:', error);
+      console.log('✅ Features loaded:', data);
+      setFeatures(data.items || []);
+    } catch (error: any) {
+      console.error('❌ Failed to load features:', error);
+      alert(`Ошибка загрузки features: ${error.message || 'Unknown error'}`);
     } finally {
       setLoadingFeatures(false);
     }
@@ -133,14 +143,33 @@ export default function DataIntakePage() {
   const runPipeline = async () => {
     setLoading(true);
     setPipelineStatus(null);
+    setPipelineProgress({ stage: 'Инициализация', progress: 0, message: 'Подготовка к запуску pipeline...' });
+    
     try {
+      // Этап 1: Загрузка данных
+      setPipelineProgress({ stage: 'Загрузка данных', progress: 20, message: `Загрузка данных из ${selectedSource}...` });
+      
       const status = await apiClient.runDataIntakePipeline(selectedSource, dateFrom, dateTo);
+      
+      // Этап 2: Обработка
+      setPipelineProgress({ stage: 'Обработка', progress: 60, message: 'Обработка данных через 3 слоя...' });
+      
       setPipelineStatus(status);
-      // Reload features after pipeline
-      await loadFeatures();
-      await loadHotLeads();
+      
+      // Этап 3: Завершение
+      if (status.status === 'completed') {
+        setPipelineProgress({ stage: 'Завершение', progress: 90, message: 'Сохранение результатов...' });
+        await loadFeatures();
+        await loadHotLeads();
+        setPipelineProgress({ stage: 'Готово', progress: 100, message: 'Pipeline успешно завершен!' });
+        setTimeout(() => setPipelineProgress(null), 3000);
+      } else if (status.status === 'failed') {
+        setPipelineProgress({ stage: 'Ошибка', progress: 0, message: 'Pipeline завершился с ошибками' });
+        setTimeout(() => setPipelineProgress(null), 5000);
+      }
     } catch (error: any) {
       console.error('Pipeline failed:', error);
+      setPipelineProgress({ stage: 'Ошибка', progress: 0, message: error.message || 'Неизвестная ошибка' });
       setPipelineStatus({
         batch_id: 'error',
         status: 'failed',
@@ -152,6 +181,7 @@ export default function DataIntakePage() {
         completed_at: null,
         duration_ms: null,
       });
+      setTimeout(() => setPipelineProgress(null), 5000);
     } finally {
       setLoading(false);
     }
@@ -315,12 +345,46 @@ export default function DataIntakePage() {
             </div>
           </div>
 
+          {/* Pipeline Progress */}
+          {pipelineProgress && (
+            <div className="mt-4 p-4 rounded-lg border bg-card">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  {pipelineProgress.stage === 'Ошибка' ? (
+                    <XCircle className="h-4 w-4 text-destructive" />
+                  ) : pipelineProgress.stage === 'Готово' ? (
+                    <CheckCircle2 className="h-4 w-4 text-green-500" />
+                  ) : (
+                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                  )}
+                  <span className="text-sm font-medium">{pipelineProgress.stage}</span>
+                </div>
+                <span className="text-sm text-muted-foreground">{pipelineProgress.progress}%</span>
+              </div>
+              <Progress value={pipelineProgress.progress} className="mb-2" />
+              <p className="text-sm text-muted-foreground">{pipelineProgress.message}</p>
+            </div>
+          )}
+
           {/* Pipeline Status */}
           {pipelineStatus && (
-            <div className="mt-4 p-4 rounded-lg bg-muted">
-              <div className="flex items-center gap-2 mb-2">
+            <div className={`mt-4 p-4 rounded-lg border ${
+              pipelineStatus.status === 'completed' 
+                ? 'bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-800' 
+                : pipelineStatus.status === 'failed'
+                ? 'bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800'
+                : 'bg-muted'
+            }`}>
+              <div className="flex items-center gap-2 mb-3">
+                {pipelineStatus.status === 'completed' ? (
+                  <CheckCircle2 className="h-5 w-5 text-green-500" />
+                ) : pipelineStatus.status === 'failed' ? (
+                  <XCircle className="h-5 w-5 text-red-500" />
+                ) : (
+                  <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                )}
                 <Badge variant={pipelineStatus.status === 'completed' ? 'default' : 'destructive'}>
-                  {pipelineStatus.status}
+                  {pipelineStatus.status === 'completed' ? 'Завершено' : pipelineStatus.status === 'failed' ? 'Ошибка' : 'Выполняется'}
                 </Badge>
                 <span className="text-sm text-muted-foreground">
                   Batch: {pipelineStatus.batch_id}
@@ -328,27 +392,45 @@ export default function DataIntakePage() {
                 {pipelineStatus.duration_ms && (
                   <span className="text-sm text-muted-foreground flex items-center gap-1">
                     <Clock className="h-3 w-3" />
-                    {pipelineStatus.duration_ms}ms
+                    {(pipelineStatus.duration_ms / 1000).toFixed(1)}s
                   </span>
                 )}
               </div>
-              <div className="grid grid-cols-3 gap-4 text-sm">
-                <div>
-                  <span className="text-muted-foreground">Raw (L1):</span>{' '}
-                  <span className="font-medium">{pipelineStatus.raw_count}</span>
+              
+              <div className="grid grid-cols-3 gap-4 text-sm mb-3">
+                <div className="flex flex-col">
+                  <span className="text-muted-foreground text-xs">Raw (L1)</span>
+                  <span className="font-bold text-lg">{pipelineStatus.raw_count}</span>
+                  <span className="text-xs text-muted-foreground">сырых событий</span>
                 </div>
-                <div>
-                  <span className="text-muted-foreground">Normalized (L2):</span>{' '}
-                  <span className="font-medium">{pipelineStatus.normalized_count}</span>
+                <div className="flex flex-col">
+                  <span className="text-muted-foreground text-xs">Normalized (L2)</span>
+                  <span className="font-bold text-lg">{pipelineStatus.normalized_count}</span>
+                  <span className="text-xs text-muted-foreground">нормализованных</span>
                 </div>
-                <div>
-                  <span className="text-muted-foreground">Features (L3):</span>{' '}
-                  <span className="font-medium">{pipelineStatus.features_count}</span>
+                <div className="flex flex-col">
+                  <span className="text-muted-foreground text-xs">Features (L3)</span>
+                  <span className="font-bold text-lg">{pipelineStatus.features_count}</span>
+                  <span className="text-xs text-muted-foreground">фич</span>
                 </div>
               </div>
+              
               {pipelineStatus.errors.length > 0 && (
-                <div className="mt-2 text-sm text-red-500">
-                  Ошибки: {pipelineStatus.errors.join(', ')}
+                <div className="mt-3 p-3 rounded-md bg-red-100 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+                  <div className="flex items-start gap-2">
+                    <XCircle className="h-4 w-4 text-red-500 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-red-800 dark:text-red-200 mb-1">Ошибки выполнения:</p>
+                      <ul className="text-sm text-red-700 dark:text-red-300 space-y-1">
+                        {pipelineStatus.errors.map((error, idx) => (
+                          <li key={idx} className="flex items-start gap-2">
+                            <span className="text-red-500">•</span>
+                            <span className="break-words">{error}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -456,9 +538,15 @@ export default function DataIntakePage() {
             Загрузить Features
           </Button>
 
-          {features.length === 0 ? (
+          {loadingFeatures ? (
+            <div className="text-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2 text-primary" />
+              <p className="text-sm text-muted-foreground">Загрузка features...</p>
+            </div>
+          ) : features.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
-              Нажмите "Загрузить Features" для просмотра данных
+              <p className="mb-2">Нет данных для отображения.</p>
+              <p className="text-xs">Убедитесь, что pipeline завершился успешно и создал features (L3).</p>
             </div>
           ) : (
             <div className="overflow-x-auto">

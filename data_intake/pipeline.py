@@ -280,16 +280,40 @@ class DataIntakePipeline:
         }
 
         async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.get(
-                "https://api-metrika.yandex.net/stat/v1/data",
-                params=params,
-                headers=headers,
-            )
+            try:
+                response = await client.get(
+                    "https://api-metrika.yandex.net/stat/v1/data",
+                    params=params,
+                    headers=headers,
+                )
+            except httpx.TimeoutException as e:
+                logger.error(f"Yandex.Metrika API timeout: {e}")
+                raise PipelineError(f"API request timed out: {e}")
+            except httpx.RequestError as e:
+                logger.error(f"Yandex.Metrika API request error: {e}")
+                raise PipelineError(f"API request failed: {e}")
 
+            # Handle response errors
+            if response.status_code == 401:
+                logger.error("Yandex.Metrika authentication failed")
+                raise PipelineError("Invalid OAuth token - check YANDEX_METRIKA_TOKEN")
+            
+            if response.status_code == 403:
+                logger.error("Yandex.Metrika access denied")
+                raise PipelineError("Access denied - check token permissions and counter access")
+            
             if response.status_code != 200:
-                raise PipelineError(f"API error: {response.status_code}")
+                error_text = response.text[:500] if response.text else "No error details"
+                logger.error(f"Yandex.Metrika API error: status={response.status_code}, body={error_text}")
+                raise PipelineError(
+                    f"API returned status {response.status_code}: {error_text}"
+                )
 
-            return response.json()
+            try:
+                return response.json()
+            except Exception as e:
+                logger.error(f"Failed to parse Yandex.Metrika response: {e}")
+                raise PipelineError(f"Invalid JSON response from API: {e}")
 
     async def _save_raw_events(
         self,
@@ -445,9 +469,97 @@ class DataIntakePipeline:
         self,
         raw_event: RawEvent,
     ) -> list[NormalizedEventCreate]:
-        """Generic normalization for other sources."""
-        # Placeholder for future sources
-        return []
+        """
+        Generic normalization for other sources (GA4, etc.).
+        
+        For GA4, raw_data contains {"events": [VisitEvent.model_dump(), ...]}
+        We need to convert these to NormalizedEventCreate.
+        """
+        normalized = []
+        raw_data = raw_event.raw_data
+        
+        # Handle GA4 format: {"events": [VisitEvent dicts]}
+        if raw_event.source == SourceType.GOOGLE_ANALYTICS:
+            events = raw_data.get("events", [])
+            
+            for event_dict in events:
+                try:
+                    # VisitEvent already has normalized format, just convert to NormalizedEventCreate
+                    normalized_event = NormalizedEventCreate(
+                        raw_event_id=raw_event.id,
+                        source=SourceType.GOOGLE_ANALYTICS,
+                        session_id=event_dict.get("session_id"),
+                        user_id=event_dict.get("user_id"),
+                        client_id=event_dict.get("client_id"),
+                        occurred_at=self._parse_datetime(event_dict.get("occurred_at")),
+                        url=event_dict.get("url"),
+                        landing_page=event_dict.get("landing_page"),
+                        exit_page=event_dict.get("exit_page"),
+                        referrer=event_dict.get("referrer"),
+                        utm_source=event_dict.get("utm_source"),
+                        utm_medium=event_dict.get("utm_medium"),
+                        utm_campaign=event_dict.get("utm_campaign"),
+                        utm_term=event_dict.get("utm_term"),
+                        utm_content=event_dict.get("utm_content"),
+                        traffic_source_type=self._parse_traffic_type(event_dict.get("traffic_source_type")),
+                        device_type=event_dict.get("device_type"),
+                        browser=event_dict.get("browser"),
+                        os=event_dict.get("os"),
+                        screen_resolution=event_dict.get("screen_resolution"),
+                        country=event_dict.get("country"),
+                        region=event_dict.get("region"),
+                        city=event_dict.get("city"),
+                        page_views=event_dict.get("page_views"),
+                        raw_visit_duration=event_dict.get("raw_visit_duration"),
+                        events_count=event_dict.get("events_count"),
+                        is_new_visitor=event_dict.get("is_new_visitor"),
+                        is_bounce=event_dict.get("is_bounce"),
+                        search_phrase=event_dict.get("search_phrase"),
+                        internal_search_query=event_dict.get("internal_search_query"),
+                        goals_reached=event_dict.get("goals_reached"),
+                    )
+                    normalized.append(normalized_event)
+                except Exception as e:
+                    logger.warning(f"Failed to normalize GA4 event: {e}")
+                    continue
+        
+        return normalized
+    
+    def _parse_datetime(self, value: Any) -> datetime:
+        """Parse datetime from various formats."""
+        if value is None:
+            return datetime.utcnow()
+        
+        if isinstance(value, datetime):
+            return value
+        
+        if isinstance(value, str):
+            try:
+                # Try ISO format
+                if 'T' in value or ' ' in value:
+                    return datetime.fromisoformat(value.replace('Z', '+00:00'))
+                # Try date only
+                return datetime.combine(datetime.fromisoformat(value).date(), datetime.min.time())
+            except Exception:
+                pass
+        
+        return datetime.utcnow()
+    
+    def _parse_traffic_type(self, value: Any) -> Optional[TrafficSourceType]:
+        """Parse traffic source type."""
+        if value is None:
+            return None
+        
+        if isinstance(value, TrafficSourceType):
+            return value
+        
+        if isinstance(value, str):
+            try:
+                return TrafficSourceType(value.lower())
+            except ValueError:
+                pass
+        
+        return None
 
     def _determine_traffic_type(
         self,

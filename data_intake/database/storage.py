@@ -11,7 +11,7 @@ Uses Supabase/PostgreSQL for storage.
 
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, date
 from typing import Any, Optional
 from uuid import uuid4
 
@@ -80,20 +80,40 @@ class DataIntakeStorage:
     # L1: RAW EVENTS
     # =========================================================================
 
+    def _serialize_for_json(self, obj: Any) -> Any:
+        """
+        Recursively serialize objects for JSON storage.
+        Converts datetime objects to ISO format strings.
+        """
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        elif isinstance(obj, date):
+            return obj.isoformat()
+        elif isinstance(obj, dict):
+            return {k: self._serialize_for_json(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self._serialize_for_json(item) for item in obj]
+        else:
+            return obj
+
     async def save_raw_event(self, event: RawEventCreate) -> RawEvent:
         """
         Save raw event to L1 storage.
 
         This is the "any garbage is saved" layer - complete API response.
         """
+        # Serialize raw_data to ensure all datetime objects are converted to strings
+        serialized_raw_data = self._serialize_for_json(event.raw_data)
+        serialized_request_params = self._serialize_for_json(event.request_params) if event.request_params else None
+        
         data = {
             "source": event.source.value,
             "source_event_id": event.source_event_id,
             "counter_id": event.counter_id,
-            "raw_data": event.raw_data,
+            "raw_data": serialized_raw_data,
             "api_endpoint": event.api_endpoint,
             "api_version": event.api_version,
-            "request_params": event.request_params,
+            "request_params": serialized_request_params,
             "date_from": event.date_from.isoformat() if event.date_from else None,
             "date_to": event.date_to.isoformat() if event.date_to else None,
             "batch_id": event.batch_id,

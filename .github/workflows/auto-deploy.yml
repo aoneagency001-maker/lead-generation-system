@@ -134,12 +134,80 @@ jobs:
             tar -xzf /tmp/leadgen-$VERSION.tar.gz -C "$DEPLOY_PATH"
             rm /tmp/leadgen-$VERSION.tar.gz
             
-            # Копирование .env если существует
-            if [ -f "$DEPLOY_PATH/.env.backup" ]; then
+            # Создание .env из GitHub Secrets (если не существует backup)
+            if [ ! -f "$DEPLOY_PATH/.env.backup" ]; then
+              echo "📝 Создание .env из GitHub Secrets..."
+              # .env будет создан в следующем шаге
+            else
               cp "$DEPLOY_PATH/.env.backup" "$DEPLOY_PATH/.env"
             fi
             
             echo "✅ Версия $VERSION развернута"
+          ENDSSH
+
+      - name: 📝 Create .env on server from GitHub Secrets
+        if: env.VPS_HOST != ''
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ env.VPS_USER }}@${{ env.VPS_HOST }} << 'ENDSSH'
+            DEPLOY_PATH="${{ env.VPS_DEPLOY_PATH }}"
+            
+            # Создаём .env файл из GitHub Secrets
+            # ⚠️ ВАЖНО: Секреты передаются через GitHub Secrets, НЕ через репозиторий
+            cat > "$DEPLOY_PATH/.env" << 'EOF'
+          # ============================================
+          # Lead Generation System - Production .env
+          # Generated automatically from GitHub Secrets
+          # ⚠️ НЕ КОММИТИТЬ В GIT!
+          # ============================================
+          
+          # API Settings
+          API_HOST=0.0.0.0
+          API_PORT=8001
+          DEBUG=false
+          API_SECRET_KEY=${{ secrets.API_SECRET_KEY || 'change-me-in-production' }}
+          
+          # Supabase
+          SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY=${{ secrets.SUPABASE_KEY }}
+          SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }}
+          
+          # Redis
+          REDIS_URL=${{ secrets.REDIS_URL || 'redis://localhost:6379/0' }}
+          
+          # Telegram Bots
+          TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_MONITOR_BOT_TOKEN=${{ secrets.TELEGRAM_MONITOR_BOT_TOKEN }}
+          TELEGRAM_ASSISTANT_BOT_TOKEN=${{ secrets.TELEGRAM_ASSISTANT_BOT_TOKEN }}
+          TELEGRAM_NOTIFICATION_CHAT_ID=${{ secrets.TELEGRAM_NOTIFICATION_CHAT_ID }}
+          TELEGRAM_MONITOR_CHAT_ID=${{ secrets.TELEGRAM_MONITOR_CHAT_ID }}
+          TELEGRAM_SALES_CHAT_ID=${{ secrets.TELEGRAM_SALES_CHAT_ID }}
+          
+          # AI/LLM APIs
+          OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
+          PERPLEXITY_API_KEY=${{ secrets.PERPLEXITY_API_KEY }}
+          
+          # Analytics
+          YANDEX_METRIKA_TOKEN=${{ secrets.YANDEX_METRIKA_TOKEN }}
+          GOOGLE_ANALYTICS_CREDENTIALS_PATH=${{ secrets.GOOGLE_ANALYTICS_CREDENTIALS_PATH || 'credentials/ga4-service-account.json' }}
+          GOOGLE_ANALYTICS_PROPERTY_ID=${{ secrets.GOOGLE_ANALYTICS_PROPERTY_ID }}
+          
+          # WhatsApp
+          WHATSAPP_API_URL=${{ secrets.WHATSAPP_API_URL || 'http://localhost:3001' }}
+          WHATSAPP_API_KEY=${{ secrets.WHATSAPP_API_KEY }}
+          
+          # CORS
+          CORS_ORIGINS=${{ secrets.CORS_ORIGINS || 'http://localhost:3000,http://localhost:3001' }}
+          CORS_ALLOW_CREDENTIALS=true
+          EOF
+            
+            # Устанавливаем правильные права доступа
+            chmod 600 "$DEPLOY_PATH/.env"
+            
+            # Создаём backup для следующего деплоя
+            cp "$DEPLOY_PATH/.env" "$DEPLOY_PATH/.env.backup"
+            
+            echo "✅ .env файл создан из GitHub Secrets"
           ENDSSH
 
       - name: 🔄 Restart services on VPS

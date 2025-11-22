@@ -31,6 +31,15 @@ env/
 .env.production
 .env.staging
 .env.*.local
+.env.*
+!.env.example
+
+# Files with secrets (NEVER COMMIT)
+*_SECRETS.md
+*_TOKENS.md
+*_CREDENTIALS.md
+ENV_*.md
+!ENV_EXAMPLE.md
 
 # Credentials (Service Accounts, API Keys, etc.)
 credentials/

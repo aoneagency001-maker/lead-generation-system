@@ -259,11 +259,51 @@ Each critical operation must:
 Always follow:
 
 * minimal API surface
-* no secrets in code
+* **NEVER commit secrets to Git** - use GitHub Secrets or environment variables
+* **NEVER include real tokens/keys in .md files** - use placeholders like `your_token_here`
+* **NEVER log secrets** - mask them in logs
 * proper validation
 * async everywhere for I/O
 * safe DB operations
 * rate limiting + retries for scraping
+
+### 🔒 Secrets Management (CRITICAL)
+
+**❌ NEVER DO:**
+- ❌ Commit `.env` files with real values
+- ❌ Put tokens/keys in documentation (.md files)
+- ❌ Hardcode secrets in source code
+- ❌ Commit `credentials/*.json` files
+- ❌ Log API keys or tokens to console/files
+- ❌ Store secrets in Git history
+
+**✅ ALWAYS DO:**
+- ✅ Use GitHub Secrets for production
+- ✅ Create `.env.example` with placeholders
+- ✅ Add secret files to `.gitignore`
+- ✅ Use environment variables in code: `os.getenv("TELEGRAM_BOT_TOKEN")`
+- ✅ Check GitHub Security → Secret Scanning regularly
+- ✅ Rotate compromised tokens immediately
+
+**Example:**
+```python
+# ✅ GOOD
+telegram_token = os.getenv("TELEGRAM_BOT_TOKEN")
+if not telegram_token:
+    raise ValueError("TELEGRAM_BOT_TOKEN not set")
+
+# ❌ BAD
+telegram_token = "7848265878:AAFkCTv7xWNj7Se4RAq8XkMC_7vlxZLT0-k"
+```
+
+**Documentation:**
+```markdown
+# ✅ GOOD
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
+
+# ❌ BAD
+TELEGRAM_BOT_TOKEN=7848265878:AAFkCTv7xWNj7Se4RAq8XkMC_7vlxZLT0-k
+```
 
 ---
 
