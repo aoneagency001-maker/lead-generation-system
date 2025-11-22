@@ -15,6 +15,11 @@ from library.integrations.google_analytics import (
     GoogleAnalyticsAPIError
 )
 from core.utils.cache import get_cached, set_cached, cache_key
+from core.utils.validation import (
+    validate_property_id,
+    validate_days,
+    validate_limit
+)
 
 logger = logging.getLogger(__name__)
 
@@ -56,17 +61,20 @@ async def get_properties(
             "properties": [
                 {
                     "id": "123456789",
-                    "name": "Default Property",
+                    "name": "Vessel",
                     "property": "properties/123456789"
                 },
                 ...
             ]
         }
-    
-    Raises:
-        401: Если credentials не установлены или невалидные
-        500: Если произошла ошибка API
     """
+    # Проверяем кэш (1 час для списка properties)
+    cache_key_str = cache_key("ga4", "properties")
+    cached = await get_cached(cache_key_str)
+    if cached:
+        logger.info("✅ Использован кэш для списка properties")
+        return cached
+    
     try:
         properties = await client.get_properties()
         

@@ -402,6 +402,8 @@ async def generate_insights(request: InsightRequest):
 async def get_latest_insights(limit: int = 5):
     """
     Get latest generated insights.
+    
+    Returns empty array if table doesn't exist or no insights available.
     """
     try:
         supabase = get_supabase_client()
@@ -416,8 +418,15 @@ async def get_latest_insights(limit: int = 5):
         return {"insights": result.data or []}
 
     except Exception as e:
+        error_str = str(e)
+        # Check if it's a "table not found" error
+        if "Could not find the table" in error_str or "PGRST205" in error_str:
+            logger.warning(f"Table 'analytics_insights' not found. Returning empty insights. Error: {e}")
+            return {"insights": [], "message": "Table not found. Run schema migration to create analytics_insights table."}
+        
         logger.error(f"Failed to fetch insights: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        # Return empty array instead of raising exception to prevent frontend errors
+        return {"insights": [], "error": error_str}
 
 
 @router.get("/insights/{insight_id}")

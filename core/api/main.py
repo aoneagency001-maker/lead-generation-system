@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 import logging
 
 from core.api.config import settings, get_cors_origins
-from core.api.routes import health, niches, campaigns, leads, modules, yandex_metrika, google_analytics, llm_pipeline
+from core.api.routes import health, niches, campaigns, leads, modules, yandex_metrika, google_analytics, analytics_export, llm_pipeline
 from shared.telegram_notifier import telegram_notifier
 
 # Competitor Parser Module
@@ -112,6 +112,7 @@ app.include_router(leads.router, prefix="/api/leads", tags=["Leads"])
 app.include_router(modules.router, prefix="/api", tags=["Modules"])
 app.include_router(yandex_metrika.router, prefix="/api", tags=["Yandex Metrika"])
 app.include_router(google_analytics.router, prefix="/api", tags=["Google Analytics"])
+app.include_router(analytics_export.router, prefix="/api", tags=["Analytics Export"])
 app.include_router(llm_pipeline.router, prefix="/api", tags=["LLM Pipeline"])
 
 # Competitor Parser Module

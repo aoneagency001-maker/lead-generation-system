@@ -1,20 +1,31 @@
 """
-Google Analytics 4 Provider for Data Intake
+Google Analytics 4 Analytics Provider
 
 Fetches analytics data from GA4 Data API and transforms it
-into normalized VisitEvent format for the Data Intake pipeline.
-
-Uses existing GoogleAnalyticsClient from library/integrations/google_analytics.py
+into normalized VisitEvent format.
 
 Environment Variables:
-    GOOGLE_ANALYTICS_CREDENTIALS_PATH: Path to service account JSON
-    GOOGLE_ANALYTICS_PROPERTY_ID: Property ID to fetch data from
+    GOOGLE_ANALYTICS_CREDENTIALS_PATH: Path to Service Account JSON file
+    GOOGLE_ANALYTICS_PROPERTY_ID: GA4 Property ID (format: "123456789" or "properties/123456789")
+
+API Documentation:
+    https://developers.google.com/analytics/devguides/reporting/data/v1
 """
 
 import logging
 import os
 from datetime import date, datetime
 from typing import Any, Optional
+
+from google.analytics.data_v1beta import BetaAnalyticsDataClient
+from google.analytics.data_v1beta.types import (
+    RunReportRequest,
+    Dimension,
+    Metric,
+    DateRange,
+    OrderBy,
+)
+from google.oauth2 import service_account
 
 from data_intake.models import SourceType, VisitEvent
 from data_intake.providers.base import (
@@ -26,16 +37,22 @@ from data_intake.providers.base import (
 
 logger = logging.getLogger(__name__)
 
-# Default settings
+# API Configuration
 DEFAULT_LIMIT = 10000
+REQUEST_TIMEOUT = 30.0
 
 
 class GoogleAnalyticsProvider(BaseAnalyticsProvider):
     """
-    Google Analytics 4 provider implementation for Data Intake.
+    Google Analytics 4 provider implementation.
 
-    Uses GA4 Data API v1 for fetching visit data.
-    Transforms GA4 reports into normalized VisitEvent format.
+    Uses Data API v1beta for fetching aggregated visit data.
+
+    Note on active_time_sec:
+        GA4 provides sessionDuration metric which includes total time.
+        For accurate "active time" calculation, we would need to use
+        event-level data with engagement metrics.
+        TODO: Implement event-level data fetching for precise active time tracking.
     """
 
     source_type = SourceType.GOOGLE_ANALYTICS
@@ -49,14 +66,33 @@ class GoogleAnalyticsProvider(BaseAnalyticsProvider):
         Initialize Google Analytics 4 provider.
 
         Args:
-            credentials_path: Path to service account JSON (defaults to env)
-            property_id: Property ID (defaults to env)
+            credentials_path: Path to Service Account JSON (defaults to env var)
+            property_id: GA4 Property ID (defaults to env var)
 
         Raises:
             ProviderConfigError: If required configuration is missing
         """
-        self.credentials_path = credentials_path or os.getenv("GOOGLE_ANALYTICS_CREDENTIALS_PATH")
+        self.credentials_path = credentials_path or os.getenv(
+            "GOOGLE_ANALYTICS_CREDENTIALS_PATH"
+        )
         self.property_id = property_id or os.getenv("GOOGLE_ANALYTICS_PROPERTY_ID")
+
+        # Try to get from config if available
+        if not self.credentials_path:
+            try:
+                from core.api.config import settings
+
+                self.credentials_path = settings.google_analytics_credentials_path
+            except (ImportError, AttributeError):
+                pass
+
+        if not self.property_id:
+            try:
+                from core.api.config import settings
+
+                self.property_id = settings.google_analytics_property_id
+            except (ImportError, AttributeError):
+                pass
 
         if not self.credentials_path:
             raise ProviderConfigError(
@@ -70,26 +106,31 @@ class GoogleAnalyticsProvider(BaseAnalyticsProvider):
                 source=self.source_type,
             )
 
-        if not self.property_id:
-            raise ProviderConfigError(
-                "GOOGLE_ANALYTICS_PROPERTY_ID is not set",
-                source=self.source_type,
-            )
-
-        # Initialize the existing GA4 client
+        # Initialize GA4 client
         try:
-            from library.integrations.google_analytics import GoogleAnalyticsClient
-            self._client = GoogleAnalyticsClient(
-                credentials_path=self.credentials_path,
-                property_id=self.property_id
+            self.credentials = service_account.Credentials.from_service_account_file(
+                self.credentials_path,
+                scopes=["https://www.googleapis.com/auth/analytics.readonly"],
             )
-            logger.info(f"GoogleAnalyticsProvider initialized for property: {self.property_id}")
+            self.client = BetaAnalyticsDataClient(credentials=self.credentials)
+            logger.info("Google Analytics 4 client initialized")
         except Exception as e:
             logger.error(f"Failed to initialize GA4 client: {e}")
             raise ProviderConfigError(
                 f"Failed to initialize GA4 client: {e}",
                 source=self.source_type,
             )
+
+        # Format property ID
+        self.property_id = self._format_property_id(self.property_id)
+
+    def _format_property_id(self, property_id: Optional[str]) -> str:
+        """Format property ID to 'properties/XXXXX' format."""
+        if not property_id:
+            return ""
+        if property_id.startswith("properties/"):
+            return property_id
+        return f"properties/{property_id}"
 
     async def fetch_visits(
         self,
@@ -98,7 +139,7 @@ class GoogleAnalyticsProvider(BaseAnalyticsProvider):
         limit: Optional[int] = None,
     ) -> list[VisitEvent]:
         """
-        Fetch visit data from Google Analytics 4 Data API.
+        Fetch visit data from GA4 Data API.
 
         Args:
             date_from: Start date (inclusive)
@@ -109,9 +150,15 @@ class GoogleAnalyticsProvider(BaseAnalyticsProvider):
             List of normalized VisitEvent objects
 
         Raises:
-            ProviderAuthError: If credentials are invalid
+            ProviderAuthError: If authentication fails
             ProviderAPIError: If API request fails
         """
+        if not self.property_id:
+            raise ProviderConfigError(
+                "GOOGLE_ANALYTICS_PROPERTY_ID is not set",
+                source=self.source_type,
+            )
+
         effective_limit = limit or DEFAULT_LIMIT
 
         logger.info(
@@ -120,170 +167,181 @@ class GoogleAnalyticsProvider(BaseAnalyticsProvider):
         )
 
         try:
-            # Fetch recent visits with full dimensions
-            report = await self._client.get_report(
-                property_id=self.property_id,
-                metrics=["sessions", "activeUsers", "screenPageViews", "bounceRate", "averageSessionDuration"],
-                date1=date_from.isoformat(),
-                date2=date_to.isoformat(),
+            # Build request
+            request = RunReportRequest(
+                property=self.property_id,
+                date_ranges=[
+                    DateRange(
+                        start_date=date_from.isoformat(),
+                        end_date=date_to.isoformat(),
+                    )
+                ],
                 dimensions=[
-                    "date",
-                    "sessionSource",
-                    "sessionMedium",
-                    "sessionCampaignName",
-                    "landingPage",
-                    "country",
-                    "city",
-                    "deviceCategory",
-                    "newVsReturning",
+                    Dimension(name="date"),
+                    Dimension(name="sessionSource"),
+                    Dimension(name="sessionMedium"),
+                    Dimension(name="sessionCampaignName"),
+                    Dimension(name="landingPage"),
+                    Dimension(name="firstUserDefaultChannelGroup"),
+                ],
+                metrics=[
+                    Metric(name="sessions"),
+                    Metric(name="activeUsers"),
+                    Metric(name="newUsers"),
                 ],
                 limit=effective_limit,
+                order_bys=[
+                    OrderBy(
+                        desc=True,
+                        metric=OrderBy.MetricOrderBy(metric_name="sessions"),
+                    )
+                ],
             )
+
+            # Execute request
+            response = self.client.run_report(request)
+
+            # Transform to normalized events
+            events = self._transform_response(response, date_from)
+
+            logger.info(f"Fetched {len(events)} visits from GA4")
+            return events
+
         except Exception as e:
             error_msg = str(e)
-            if "401" in error_msg or "Unauthorized" in error_msg:
+            logger.error(f"GA4 API error: {error_msg}")
+
+            # Check for authentication errors
+            if "authentication" in error_msg.lower() or "credentials" in error_msg.lower():
                 raise ProviderAuthError(
-                    "Invalid GA4 credentials",
+                    f"GA4 authentication failed: {error_msg}",
                     source=self.source_type,
                 )
-            logger.error(f"GA4 API error: {e}")
+
+            # Check for permission errors
+            if "permission" in error_msg.lower() or "403" in error_msg:
+                raise ProviderAuthError(
+                    f"GA4 access denied: {error_msg}",
+                    source=self.source_type,
+                )
+
+            # Generic API error
             raise ProviderAPIError(
-                f"GA4 API request failed: {e}",
+                f"GA4 API request failed: {error_msg}",
                 source=self.source_type,
             )
 
-        # Transform to normalized events
-        events = self._transform_response(report)
-
-        logger.info(f"Fetched {len(events)} visits from GA4")
-        return events
-
-    def _transform_response(self, data: dict[str, Any]) -> list[VisitEvent]:
+    def _transform_response(
+        self, response: Any, default_date: date
+    ) -> list[VisitEvent]:
         """
         Transform GA4 API response to normalized VisitEvent list.
 
-        GA4 report structure:
+        Response structure:
         {
-            "data": [
+            "dimension_headers": [...],
+            "metric_headers": [...],
+            "rows": [
                 {
-                    "dimensions": ["2025-11-22", "google", "organic", ...],
-                    "metrics": [sessions, users, pageviews, bounceRate, avgDuration]
+                    "dimension_values": [
+                        {"value": "20251122"},  # date
+                        {"value": "google"},  # sessionSource
+                        {"value": "organic"},  # sessionMedium
+                        {"value": "campaign1"},  # sessionCampaignName
+                        {"value": "https://..."},  # landingPage
+                        {"value": "Organic Search"},  # firstUserDefaultChannelGroup
+                    ],
+                    "metric_values": [
+                        {"value": "5"},  # sessions
+                        {"value": "4"},  # activeUsers
+                        {"value": "2"},  # newUsers
+                    ]
                 },
                 ...
-            ],
-            "totals": [...],
-            "row_count": N
+            ]
         }
         """
         events: list[VisitEvent] = []
 
-        rows = data.get("data", [])
+        rows = list(response.rows) if response.rows else []
         if not rows:
             logger.warning("No data returned from GA4")
             return events
 
         for idx, row in enumerate(rows):
             try:
-                event = self._parse_row(row, idx)
+                event = self._parse_row(row, default_date, idx)
                 if event:
                     events.append(event)
             except Exception as e:
-                logger.warning(f"Failed to parse row {idx}: {e}")
+                logger.warning(f"Failed to parse GA4 row {idx}: {e}")
                 continue
 
         return events
 
-    def _parse_row(self, row: dict[str, Any], idx: int) -> Optional[VisitEvent]:
-        """Parse a single data row into VisitEvent."""
-        dimensions = row.get("dimensions", [])
-        metrics = row.get("metrics", [])
+    def _parse_row(
+        self, row: Any, default_date: date, idx: int
+    ) -> Optional[VisitEvent]:
+        """Parse a single GA4 data row into VisitEvent."""
+        dimension_values = row.dimension_values
+        metric_values = row.metric_values
 
-        # Dimensions: date, source, medium, campaign, landingPage, country, city, device, newVsReturning
-        if len(dimensions) < 9:
-            logger.warning(f"Row {idx} has incomplete dimensions: {len(dimensions)}")
+        if len(dimension_values) < 6:
+            logger.warning(f"Row {idx} has incomplete dimensions: {len(dimension_values)}")
             return None
 
-        def safe_get(lst: list, index: int, default: Any = None) -> Any:
-            try:
-                val = lst[index]
-                if val in ("(not set)", "(none)", "(direct)", ""):
-                    return default
-                return val
-            except IndexError:
-                return default
+        # Extract dimension values
+        def get_value(dim_val: Any) -> Optional[str]:
+            val = dim_val.value if hasattr(dim_val, "value") else str(dim_val)
+            if val in ("", "null", "(not set)", "(not provided)"):
+                return None
+            return val
 
-        date_str = safe_get(dimensions, 0)
-        source = safe_get(dimensions, 1)
-        medium = safe_get(dimensions, 2)
-        campaign = safe_get(dimensions, 3)
-        landing_page = safe_get(dimensions, 4)
-        country = safe_get(dimensions, 5)
-        city = safe_get(dimensions, 6)
-        device = safe_get(dimensions, 7)
-        new_vs_returning = safe_get(dimensions, 8)
+        date_str = get_value(dimension_values[0])
+        session_source = get_value(dimension_values[1])
+        session_medium = get_value(dimension_values[2])
+        session_campaign = get_value(dimension_values[3])
+        landing_page = get_value(dimension_values[4])
+        channel_group = get_value(dimension_values[5])
 
-        # Parse date
+        # Parse date (format: YYYYMMDD)
         try:
-            # GA4 returns date as YYYYMMDD
             if date_str and len(date_str) == 8:
                 occurred_at = datetime.strptime(date_str, "%Y%m%d")
-            elif date_str:
-                occurred_at = datetime.strptime(date_str, "%Y-%m-%d")
             else:
-                occurred_at = datetime.now()
+                occurred_at = datetime.combine(default_date, datetime.min.time())
         except ValueError:
-            occurred_at = datetime.now()
+            occurred_at = datetime.combine(default_date, datetime.min.time())
 
-        # Parse metrics
-        sessions = int(metrics[0]) if len(metrics) > 0 and metrics[0] else 1
-        users = int(metrics[1]) if len(metrics) > 1 and metrics[1] else 1
-        pageviews = int(metrics[2]) if len(metrics) > 2 and metrics[2] else 0
-        bounce_rate = float(metrics[3]) if len(metrics) > 3 and metrics[3] else None
-        avg_duration = float(metrics[4]) if len(metrics) > 4 and metrics[4] else None
+        # Extract metrics
+        sessions_count = int(metric_values[0].value) if len(metric_values) > 0 and hasattr(metric_values[0], "value") else 1
+        active_users = int(metric_values[1].value) if len(metric_values) > 1 and hasattr(metric_values[1], "value") else 0
+        new_users = int(metric_values[2].value) if len(metric_values) > 2 and hasattr(metric_values[2], "value") else 0
 
         # Determine if new visitor
-        is_new_visitor = None
-        if new_vs_returning:
-            is_new_visitor = new_vs_returning.lower() == "new"
-
-        # Map medium to utm_medium
-        utm_medium = medium
-        if medium:
-            medium_lower = medium.lower()
-            if medium_lower in ["cpc", "ppc", "paid"]:
-                utm_medium = "cpc"
-            elif medium_lower == "organic":
-                utm_medium = "organic"
-            elif medium_lower == "referral":
-                utm_medium = "referral"
-            elif medium_lower in ["social", "social-media"]:
-                utm_medium = "social"
+        is_new_visitor = new_users > 0 if new_users is not None else None
 
         # Generate unique event ID
-        event_id = f"ga4_{self.property_id}_{date_str}_{idx}"
+        event_id = f"ga4_{self.property_id.replace('properties/', '')}_{date_str}_{idx}"
 
         return VisitEvent(
             event_id=event_id,
             source=self.source_type,
-            session_id=None,  # Not available in aggregated reports
+            session_id=None,  # Not available in aggregated data
             occurred_at=occurred_at,
             url=landing_page,
-            referrer=None,  # Not directly available
-            utm_source=source,
-            utm_medium=utm_medium,
-            utm_campaign=campaign,
+            referrer=None,  # Not available in this aggregation
+            utm_source=session_source,
+            utm_medium=session_medium,
+            utm_campaign=session_campaign,
             is_new_visitor=is_new_visitor,
-            page_views=pageviews,
-            active_time_sec=int(avg_duration) if avg_duration else None,
+            page_views=sessions_count,  # Using sessions count as aggregation
+            # TODO: active_time_sec requires event-level data for accurate calculation
+            active_time_sec=None,
             visit_number=None,
             user_id=None,
             user_agent=None,
             ip=None,
-            # Extended fields
-            country=country,
-            city=city,
-            device_type=device,
-            bounce_rate=bounce_rate,
         )
 
     async def health_check(self) -> bool:
@@ -293,9 +351,19 @@ class GoogleAnalyticsProvider(BaseAnalyticsProvider):
         Returns:
             True if API is accessible and credentials are valid
         """
+        if not self.property_id:
+            return False
+
         try:
-            properties = await self._client.get_properties()
-            return len(properties) > 0
+            # Try to fetch a minimal report
+            request = RunReportRequest(
+                property=self.property_id,
+                date_ranges=[DateRange(start_date="7daysAgo", end_date="today")],
+                metrics=[Metric(name="sessions")],
+                limit=1,
+            )
+            self.client.run_report(request)
+            return True
         except Exception as e:
             logger.error(f"GA4 health check failed: {e}")
             return False
@@ -307,68 +375,9 @@ class GoogleAnalyticsProvider(BaseAnalyticsProvider):
         Returns:
             Property info dict or None if failed
         """
-        try:
-            properties = await self._client.get_properties()
-            for prop in properties:
-                if prop.get("id") == self.property_id.replace("properties/", ""):
-                    return prop
-            return None
-        except Exception as e:
-            logger.error(f"Failed to get property info: {e}")
-            return None
-
-    async def fetch_raw_for_storage(
-        self,
-        date_from: date,
-        date_to: date,
-        limit: Optional[int] = None,
-    ) -> dict[str, Any]:
-        """
-        Fetch raw data from GA4 for storage in L1 (raw_events).
-
-        This method returns the raw API response without transformation,
-        suitable for storing in the raw_events table.
-
-        Args:
-            date_from: Start date
-            date_to: End date
-            limit: Maximum records
-
-        Returns:
-            Raw API response as dict
-        """
-        effective_limit = limit or DEFAULT_LIMIT
-
-        try:
-            report = await self._client.get_report(
-                property_id=self.property_id,
-                metrics=["sessions", "activeUsers", "screenPageViews", "bounceRate", "averageSessionDuration"],
-                date1=date_from.isoformat(),
-                date2=date_to.isoformat(),
-                dimensions=[
-                    "date",
-                    "sessionSource",
-                    "sessionMedium",
-                    "sessionCampaignName",
-                    "landingPage",
-                    "country",
-                    "city",
-                    "deviceCategory",
-                    "newVsReturning",
-                ],
-                limit=effective_limit,
-            )
-            return {
-                "source": "google_analytics",
-                "property_id": self.property_id,
-                "date_from": date_from.isoformat(),
-                "date_to": date_to.isoformat(),
-                "api_version": "v1beta",
-                "response": report,
-            }
-        except Exception as e:
-            logger.error(f"Failed to fetch raw GA4 data: {e}")
-            raise ProviderAPIError(
-                f"Failed to fetch raw data: {e}",
-                source=self.source_type,
-            )
+        # Note: This would require Admin API, which is separate from Data API
+        # For now, just return basic info
+        return {
+            "property_id": self.property_id,
+            "source": "GA4",
+        }

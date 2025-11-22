@@ -189,6 +189,15 @@ CREATE INDEX IF NOT EXISTS idx_llm_queue_layer ON llm_processing_queue(layer);
 -- PART 4: TRIGGERS
 -- ============================================================================
 
+-- Function for automatic updated_at column update
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+   NEW.updated_at = CURRENT_TIMESTAMP;
+   RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
 -- Trigger for updated_at on unified_metrics
 DO $$
 BEGIN

@@ -2,7 +2,7 @@
 API Routes Package
 """
 
-from . import health, niches, campaigns, leads, modules, yandex_metrika, google_analytics, llm_pipeline
+from . import health, niches, campaigns, leads, modules, yandex_metrika, google_analytics, llm_pipeline, analytics_export
 
 __all__ = [
     "health",
@@ -13,5 +13,6 @@ __all__ = [
     "yandex_metrika",
     "google_analytics",
     "llm_pipeline",
+    "analytics_export",
 ]
 

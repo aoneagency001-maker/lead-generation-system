@@ -14,6 +14,14 @@ from library.integrations.yandex_metrika import (
     YandexMetrikaAPIError
 )
 from core.utils.cache import get_cached, set_cached, cache_key
+from core.utils.validation import (
+    validate_counter_id,
+    validate_days,
+    validate_limit,
+    validate_date_range
+)
+from core.utils.export import export_to_csv, export_to_excel, format_filename
+from fastapi.responses import Response
 
 logger = logging.getLogger(__name__)
 
@@ -99,8 +107,13 @@ async def get_counters(
         
         from fastapi.responses import JSONResponse
         
+        result = {"counters": formatted_counters}
+        
+        # Сохраняем в кэш (1 час для списка счетчиков)
+        await set_cached(cache_key_str, result, ttl=3600)
+        
         return JSONResponse(
-            content={"counters": formatted_counters},
+            content=result,
             media_type="application/json; charset=utf-8"
         )
         
@@ -150,8 +163,19 @@ async def get_visitors_by_date(
     """
     from datetime import datetime, timedelta
     
+    # Валидация параметров
+    counter_id = validate_counter_id(counter_id)
+    days = validate_days(days)
+    
     date_to = datetime.now().date()
     date_from = date_to - timedelta(days=days)
+    
+    # Проверяем кэш
+    cache_key_str = cache_key("ym", "visitors-by-date", counter_id, days)
+    cached = await get_cached(cache_key_str)
+    if cached:
+        logger.info(f"✅ Использован кэш для visitors-by-date: counter_id={counter_id}, days={days}")
+        return cached
     
     try:
         report = await client.get_visitors_by_date(
@@ -159,6 +183,10 @@ async def get_visitors_by_date(
             date1=date_from.isoformat(),
             date2=date_to.isoformat()
         )
+        
+        # Сохраняем в кэш (5 минут)
+        await set_cached(cache_key_str, report, ttl=300)
+        
         return report
     except YandexMetrikaAPIError as e:
         logger.error(f"Ошибка получения данных по дням: {e}")
@@ -184,8 +212,20 @@ async def get_traffic_sources(
     """
     from datetime import datetime, timedelta
     
+    # Валидация параметров
+    counter_id = validate_counter_id(counter_id)
+    days = validate_days(days)
+    limit = validate_limit(limit, max_limit=100)
+    
     date_to = datetime.now().date()
     date_from = date_to - timedelta(days=days)
+    
+    # Проверяем кэш
+    cache_key_str = cache_key("ym", "traffic-sources", counter_id, days, limit)
+    cached = await get_cached(cache_key_str)
+    if cached:
+        logger.info(f"✅ Использован кэш для traffic-sources: counter_id={counter_id}, days={days}, limit={limit}")
+        return cached
     
     try:
         report = await client.get_traffic_sources(
@@ -194,6 +234,10 @@ async def get_traffic_sources(
             date2=date_to.isoformat(),
             limit=limit
         )
+        
+        # Сохраняем в кэш (5 минут)
+        await set_cached(cache_key_str, report, ttl=300)
+        
         return report
     except YandexMetrikaAPIError as e:
         logger.error(f"Ошибка получения источников трафика: {e}")
