@@ -75,6 +75,13 @@ async def get_counters(
         401: Если токен не установлен или невалидный
         500: Если произошла ошибка API
     """
+    # Проверяем кэш (1 час для списка счетчиков)
+    cache_key_str = cache_key("ym", "counters")
+    cached = await get_cached(cache_key_str)
+    if cached:
+        logger.info("✅ Использован кэш для списка счетчиков")
+        return cached
+    
     try:
         counters = await client.get_counters()
         
